@@ -28,6 +28,7 @@ Encounter battles (turn-based, deck-building) → loot & new tactic cards
 - Each planet develops through five stages (Outpost → Settlement → Colony → Planetary City → Ecological Civilization) purely with **real time** — offline included. Habitability sets the speed.
 - **Habitable** planets grow population; **resource** planets accumulate one of five resources (rare metal, atmospheric compounds, helium-3, water ice, deuterium). Output sits in local storage until the train collects it.
 - Habitable and resource levels buff each other galaxy-wide; the Civilization Index rewards balanced development.
+- **Districts & buildings**: each developed planet automatically opens up to five functional districts (habitation / industry / arsenal / research / trade), drawn directly on the planet's surface — completed districts show a solid ring, construction sites pulse. Buildings from a 16-entry catalog queue up automatically inside districts once their conditions are met, granting production, logistics, weapon/engine discounts, loot, civ index, and (soon) train crew. The train accelerates all of it: docking in a system doubles construction speed, and you can deliver materials to finish the current project instantly.
 
 ### The galaxy & the train
 
@@ -82,6 +83,7 @@ Encounter battles (turn-based, deck-building) → loot & new tactic cards
 - 每颗星球沿五个阶段发展(前哨站 → 聚居点 → 殖民地 → 行星都市 → 生态文明),只随**真实时间**推进——离线也不停。宜居度决定速度。
 - **居住型**星球增长人口;**资源型**星球累积五种资源之一(稀有金属、大气化合物、氦-3、水冰、氘),产出滞留本地仓,需列车靠站收取。
 - 居住与资源等级在全银河范围互相加成;文明指数奖励均衡发展。
+- **区划与建筑**:已开发星球会自动开辟至多五个功能区划(民生/工业/军工/科研/商贸),直接圈定在星球表面——建成显示实心环带,施工中脉冲闪烁。建筑图鉴共 16 座,条件满足后在对应区划内自动排队建造,产出涵盖产能、物流、武器/引擎折扣、战利品、文明指数与(即将开通的)列车乘员。列车是加速器:驻留本星系建设速度 ×2,亦可注资运送物资让当前工程立即完工。
 
 ### 银河与列车
 
