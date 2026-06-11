@@ -1,10 +1,12 @@
 # 星垦 · Stellar Homestead — 银河纪元(框架版)
 
-单星系放置养成《星垦 v12》的银河系扩展。新增**银河系总图(30 星系)**、**星际列车养成层**(原型:作品集《Interstellar Train》,2020 HDC 最佳体验奖)与**回合制自走棋遭遇战**。
+单星系放置养成《星垦 v12》的银河系扩展。新增**银河系总图(30 星系)**、**星际列车养成层**(原型:《Interstellar Train》,2020 HDC 最佳体验奖)与**回合制自走棋遭遇战**。
+
+**🎮 在线试玩:[larryyiguo.github.io/stellar-homestead](https://larryyiguo.github.io/stellar-homestead/)**
 
 ## 运行
 
-双击 `index.html` 即可(普通 `<script>` 加载,无需构建)。本地服务器亦可:`python3 -m http.server 8736`。
+直接玩在线版,或双击 `index.html`(普通 `<script>` 加载,无需构建)。本地服务器亦可:`python3 -m http.server 8736`。
 
 存档:Claude 环境用 `window.storage`,本地浏览器自动回退 `localStorage`。旧版单星系存档(`stellar_homestead_v1`)首次启动自动迁移。
 
