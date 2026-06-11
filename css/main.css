@@ -343,6 +343,18 @@ canvas.dragging{cursor:grabbing}
 .boss-skill{margin-top:.5rem;font-family:var(--mono);font-size:.62rem;color:#c4b5fd;letter-spacing:.08em;padding:.45rem .7rem;border-radius:8px;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.3)}
 .bloot{text-align:center;font-family:var(--mono);font-size:.7rem;margin-bottom:.5rem}
 
+/* 殖民区划列表 */
+.dist-row{margin-bottom:.55rem;padding:.6rem .75rem;border-radius:10px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07)}
+.dist-row.lockslot{color:var(--text-muted);font-size:.68rem;padding:.5rem .75rem;border-style:dashed;background:transparent}
+.dist-head{display:flex;align-items:baseline;gap:.45rem;font-size:.78rem}
+.dist-head .dist-sub{font-size:.58rem;color:var(--text-muted);font-weight:300}
+.dist-dot{width:8px;height:8px;border-radius:50%;flex:none;align-self:center}
+.bld{font-size:.66rem;line-height:1.7;margin-top:.35rem;color:var(--text-dim)}
+.bld.done{color:var(--text-dim)}
+.bld.done .bfx{color:var(--text-muted);font-size:.58rem;margin-left:.3rem}
+.bld.building{color:var(--amber);font-family:var(--mono);font-size:.6rem}
+.bld.locked{color:var(--text-muted);font-size:.62rem}
+
 /* 受损车厢标记 */
 .car .dmg-badge{position:absolute;top:-4px;left:2px;font-family:var(--mono);font-size:.52rem;color:var(--red);background:rgba(24,10,12,.85);padding:.05rem .3rem;border-radius:6px;border:1px solid rgba(239,68,68,.4)}
 .car.damaged svg{opacity:.5}

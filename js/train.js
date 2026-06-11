@@ -20,18 +20,18 @@ function firepower(){
   return fp;
 }
 function defense(){
-  return 10 + countCarType('habitat') * CAR_TYPES.habitat.def;
+  return 10 + countCarType('habitat') * CAR_TYPES.habitat.def + COLONY_FX.def;
 }
 function cargoCap(){
   // 几何成长:后期收取量必须跟上升级成本的数量级,否则流程卡死
-  return Math.round(countCarType('cargo') * CAR_TYPES.cargo.cap * Math.pow(2.5, save.train.engineLv - 1));
+  return Math.round(countCarType('cargo') * CAR_TYPES.cargo.cap * Math.pow(2.5, save.train.engineLv - 1) * COLONY_FX.cargo);
 }
 function battleHpScale(){             // 战斗中车厢耐久随引擎成长
   return 1 + 0.35 * (save.train.engineLv - 1);
 }
 function collectBuff(){ return 1 + countCarType('eng') * CAR_TYPES.eng.collectBuff; }
 function collectCd(){
-  return Math.max(60, COLLECT_CD_BASE - countCarType('habitat') * CAR_TYPES.habitat.cdRed);
+  return Math.max(45, COLLECT_CD_BASE - countCarType('habitat') * CAR_TYPES.habitat.cdRed - COLONY_FX.cd);
 }
 function trainSpeed(){                      // 单位/分钟;引擎受损减半
   return engineSpeed(save.train.engineLv) * (engineDamaged() ? 0.5 : 1);
@@ -121,7 +121,7 @@ function collectSystem(sysId){
     const take = Math.min(resAvail(p), remaining);
     if (take <= 0) continue;
     save.taken[p.key] = (save.taken[p.key] || 0) + take;
-    const gain = Math.round(take * collectBuff());
+    const gain = Math.round(take * collectBuff() * COLONY_FX.amt);
     save.treasury[p.res.key] = (save.treasury[p.res.key] || 0) + gain;
     got[p.res.key] = (got[p.res.key] || 0) + gain;
     remaining -= take;
@@ -175,10 +175,15 @@ function upgradeWeapon(carIdx){
   persistSave();
   return true;
 }
+function engineCostOf(lv){           // 引擎研究所折扣
+  const base = ENGINE_COSTS[lv], out = {};
+  for (const k in base) out[k] = Math.round(base[k] * COLONY_FX.ecost);
+  return out;
+}
 function upgradeEngine(){
   const lv = save.train.engineLv;
   if (lv >= ENGINE_MAXLV || engineDamaged()) return false;
-  if (!payCost(ENGINE_COSTS[lv + 1])) return false;
+  if (!payCost(engineCostOf(lv + 1))) return false;
   save.train.engineLv++;
   pushLog(`引擎升级至 LV${save.train.engineLv} · 航速 ${trainSpeed().toFixed(1)} 单位/分`);
   persistSave();

@@ -124,7 +124,7 @@ function renderTrainCard(){
     <div class="sec-label">资源金库</div>
     <div class="treasury" id="t-treasury">${treasuryHtml()}</div>
     <div class="sec-label">指令卡组 · ${save.deck.length} 张(遭遇战胜利可获取新指令)</div>
-    <div class="treasury">${deckChipsHtml()}</div>
+    <div class="treasury">${deckChipsHtml()}${COLONY_FX.crew > 0 ? `<div class="res-chip" title="由各殖民地的乘员训练营培养"><span class="rdot" style="background:var(--green)"></span><span class="rv">${COLONY_FX.crew}</span><span class="rn">乘员储备 · 车组系统筹备中</span></div>` : ''}</div>
     <button class="act-btn amber" id="t-collect" ${canCollect?'':'disabled'}>${collectLabel}</button>
     <div id="t-detail">${carDetailHtml()}</div>
     <div class="tlog">
@@ -185,7 +185,7 @@ function carDetailHtml(){
     let opt;
     if (lv >= ENGINE_MAXLV) opt = `<div class="opt"><div class="ol">引擎已达最高等级<span class="od">曲率帆全展 —— 银河任意角落都在航程之内。</span></div></div>`;
     else {
-      const cost = ENGINE_COSTS[lv+1];
+      const cost = engineCostOf(lv+1);
       const unlocks = SYSTEMS.filter(s => s.req && s.req.engine === lv+1).map(s => s.name).join('、');
       opt = `<div class="opt">
         <div class="ol">升级引擎 → LV${lv+1}<span class="od">航速 ${engineSpeed(lv).toFixed(1)} → ${engineSpeed(lv+1).toFixed(1)} 单位/分${unlocks ? ' · 解锁航线:'+unlocks : ''}</span></div>

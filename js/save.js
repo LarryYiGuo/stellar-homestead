@@ -52,6 +52,7 @@ function normalizeSave(){
   const f = freshSave();
   for (const k of ['est','taken','treasury','lastCollect','visited','log','bossKills'])
     if (!save[k]) save[k] = f[k];
+  if (!save.colony) save.colony = {};
   if (!Array.isArray(save.deck) || !save.deck.length) save.deck = BASE_DECK.slice();
   save.deck = save.deck.filter(id => CARDS[id]);   // 剔除已废弃的卡 id
   for (const r in f.treasury) if (typeof save.treasury[r] !== 'number') save.treasury[r] = 0;

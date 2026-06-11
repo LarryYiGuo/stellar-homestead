@@ -124,9 +124,74 @@ function renderDevBlock(){
     ${nextHtml}
     ${ecoHtml}
     <div class="rate-line">发展速率 <span>${d.habit.toFixed(2)} pts/s</span> · 已运转 ${fmtDuration(elapsed)}</div>
+    <div class="divider"></div>
+    <div class="sec-label" style="--c:var(--purple)">殖民区划</div>
+    ${districtsHtml(d)}
     <p class="hint">开发等级越高,夜面城市灯光越密集——切换到星球背阳面即可观察。</p>`;
   const cb = $('collect-btn');
   if (cb) cb.onclick = () => doCollect(d.sysId);
+  const ib = $('invest-btn');
+  if (ib) ib.onclick = () => {
+    if (investColony(d.key)){
+      showToast(`物资已注入 <b>${d.name}</b> —— 施工即刻完成`, {sfx:'confirm', say:'Construction complete.'});
+      renderDevBlock(); refreshDock();
+      if (typeof updateDistrictUniforms === 'function') updateDistrictUniforms();
+    } else sfx('err');
+  };
+}
+
+/* ── 区划与建筑列表 ── */
+function districtsHtml(p){
+  const st = colonyState(p);
+  const lv = devLevel(p);
+  const docked = save.train.status === 'docked' && save.train.sys === p.sysId && !save.pendingRaid;
+  const rows = [];
+
+  st.districts.forEach((dd, i) => {
+    const dt = DISTRICT_TYPES[dd.type];
+    const done = dDone(dd);
+    let inner = '';
+    if (!done){
+      inner = `<div class="bld building">⚒ 开辟中 ${(dProg(dd)*100).toFixed(0)}% · 剩余 ${fmtDuration(dRemain(dd))}${docked ? ' · 🚆×2' : ''}</div>`;
+    } else {
+      for (const b of dd.builds){
+        const bd = BUILDINGS[b.id];
+        inner += dDone(b)
+          ? `<div class="bld done">✓ ${bd.name} <span class="bfx">${bd.desc}</span></div>`
+          : `<div class="bld building">⚒ ${bd.name} · ${(dProg(b)*100).toFixed(0)}% · 剩余 ${fmtDuration(dRemain(b))}${docked ? ' · 🚆×2' : ''}</div>`;
+      }
+      if (dd.builds.length < BUILDS_PER_DISTRICT){
+        const next = nextBuildingFor(p, st, dd);
+        if (next && !next.ready){
+          const unmet = next.conds.filter(c => !c.met).map(c => c.text).join(' · ');
+          inner += `<div class="bld locked">○ ${next.def.name} · 待条件:${unmet}</div>`;
+        } else if (next){
+          inner += `<div class="bld locked">○ ${next.def.name} · 排队中</div>`;
+        } else {
+          inner += `<div class="bld locked">○ 暂无可建建筑</div>`;
+        }
+      }
+    }
+    rows.push(`<div class="dist-row">
+      <div class="dist-head"><span class="dist-dot" style="background:${dt.color}"></span><b>${dt.name}</b>
+        <span class="dist-sub">${dt.desc}</span></div>
+      ${inner}</div>`);
+  });
+  for (let i = st.districts.length; i < DISTRICT_MAX; i++){
+    rows.push(`<div class="dist-row lockslot">○ 区划位 ${i+1} · ${i < lv ? '等待自动开辟' : `「${LEVELS[i+1].name}」阶段解锁`}</div>`);
+  }
+
+  // 注资完工(需列车驻留本星系)
+  const act = activeConstruction(st);
+  let investHtml = '';
+  if (act){
+    const cost = investCost(p, st);
+    const costTxt = Object.entries(cost).map(([k,v]) => `${RESOURCES[k].name} ${fmtNum(v)}`).join(' + ');
+    investHtml = docked
+      ? `<button id="invest-btn" class="act-btn cyan" style="margin-top:.6rem" ${canAfford(cost)?'':'disabled'}>注 资 完 工 · ${act.label}(${costTxt})</button>`
+      : `<div class="buff-line" style="margin-top:.5rem">⚒ 「${act.label}」施工中 —— 列车驻留本星系可商贸加速 ×2,或注资(${costTxt})立即完工</div>`;
+  }
+  return rows.join('') + investHtml;
 }
 
 function doCollect(sysId){
@@ -301,6 +366,7 @@ function onModeChanged(){
   panelPlanet = null; panelSys = null;
   refreshDock();
   refreshTopbar();
+  updateDistrictUniforms();
 }
 
 /* ════════ Toast ════════ */
@@ -494,6 +560,11 @@ function afterSaveChanged(){
 
 /* ════════ 每秒主刷新 ════════ */
 function tickUI(){
+  // 殖民区划:自动开辟/建造推进 + 效果聚合 + 星球表面投影
+  colonyTick();
+  computeColonyFx();
+  updateDistrictUniforms();
+
   // 列车抵达检查
   const arrival = checkArrival();
   if (arrival){

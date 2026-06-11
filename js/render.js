@@ -215,11 +215,18 @@ function buildSystemScene(sysId){
     blending:THREE.AdditiveBlending, depthWrite:false, transparent:true }));
   glow2.scale.setScalar(120); systemScene.add(glow2);
 
+  const distUniforms = () => ({
+    uDistDir:{value: Array.from({length:5}, () => new THREE.Vector3(0,1,0))},
+    uDistCol:{value: Array.from({length:5}, () => new THREE.Vector3())},
+    uDistR:{value: new Array(5).fill(0)},
+    uDistProg:{value: new Array(5).fill(0)},
+  });
   const mkPlanetMat = (d) => new THREE.ShaderMaterial({
     vertexShader: PLANET_VERT, fragmentShader: PLANET_FRAG,
     uniforms:{
       uTime:{value:0}, uSeed:{value:d.seed}, uDev:{value:0},
       uType:{value:TYPE_MAP[d.shader]},
+      ...distUniforms(),
       uC1:{value:new THREE.Vector3(...d.c1)},
       uC2:{value:new THREE.Vector3(...d.c2)},
       uC3:{value:new THREE.Vector3(...d.c3)},
@@ -301,6 +308,7 @@ function buildSystemScene(sysId){
             uAtmo:{value:new THREE.Vector3(0.6,0.6,0.7)}, uAtmoS:{value:0.04},
             uBandFreq:{value:6}, uPolarIce:{value:0}, uSea:{value:0.46}, uArch:{value:0},
             uSunPos:{value:new THREE.Vector3()},
+            ...distUniforms(),
           }});
         const moon = new THREE.Mesh(new THREE.SphereGeometry(m.r, 24, 24), mm);
         systemScene.add(moon);
@@ -309,6 +317,29 @@ function buildSystemScene(sysId){
     }
 
     planetObjs.push({ data:d, mesh, pivot, mat, trailMat, angle0: (d.seed*1.37) % (Math.PI*2) });
+  }
+}
+
+/* ── 区划表面投影:把殖民区划状态同步到行星着色器 ── */
+function updateDistrictUniforms(){
+  if (mode !== 'system') return;
+  for (const o of planetObjs){
+    const u = o.mat.uniforms;
+    if (!u.uDistR) continue;
+    const st = save.colony && save.colony[o.data.key];
+    for (let i = 0; i < 5; i++){
+      const d = st && st.districts[i];
+      if (d){
+        const dir = districtDir(o.data, i);
+        u.uDistDir.value[i].set(dir[0], dir[1], dir[2]);
+        const c = DISTRICT_TYPES[d.type].col3;
+        u.uDistCol.value[i].set(c[0], c[1], c[2]);
+        u.uDistR.value[i] = 0.34;
+        u.uDistProg.value[i] = dDone(d) ? 1.0 : Math.max(0.02, Math.min(0.99, dProg(d)));
+      } else {
+        u.uDistR.value[i] = 0;
+      }
+    }
   }
 }
 

@@ -470,7 +470,7 @@ function finishBattle(result){
   if (result === 'victory' || result === 'withdraw' || result === 'escape'){
     let mult = result === 'victory' ? 1 : result === 'withdraw' ? 0.5 : 0.7;
     mult *= (B.autoMult || 1) * (cargoDown ? 0.6 : 1) * (isBoss ? B.boss.lootMult : 1);
-    const total = Math.round(B.value * 3 * sys.rich * mult * (B.region ? B.region.loot : 1));
+    const total = Math.round(B.value * 3 * sys.rich * mult * (B.region ? B.region.loot : 1) * COLONY_FX.loot);
     const mainKey = (sys.bias && sys.bias !== 'hab') ? sys.bias : 'metal';
     const keys = Object.keys(RESOURCES).filter(k => k !== mainKey);
     const sideKey = keys[Math.floor(Math.random() * keys.length)];

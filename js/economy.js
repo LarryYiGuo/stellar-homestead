@@ -76,19 +76,19 @@ function popOf(p){
   if (lv === 0) return 0;
   const prog = devProgress(p);
   const a = POP_MILESTONES[lv], b = POP_MILESTONES[lv+1];
-  return a * Math.pow(b/a, prog) * p.capScale * capBuff();
+  return a * Math.pow(b/a, prog) * p.capScale * capBuff() * colonyCap(p);
 }
 function popCapOf(p){
   if (p.role !== 'hab') return 0;
   const lv = devLevel(p);
   if (lv === 0) return 0;
-  return POP_MILESTONES[lv+1] * p.capScale * capBuff();
+  return POP_MILESTONES[lv+1] * p.capScale * capBuff() * colonyCap(p);
 }
 function resOf(p){                       // 累计产出(含已收取部分)
   if (p.role !== 'res') return 0;
   const lv = devLevel(p);
   if (lv === 0) return 0;
-  const rich = p.res.rich;
+  const rich = p.res.rich * colonyProd(p);
   if (lv >= MAX_LEVEL){
     const extra = Math.max(0, devPoints(p) - LEVELS[MAX_LEVEL].th) * RES_RATE_MAX;
     return (RES_MILESTONES[MAX_LEVEL] + extra) * rich * rateBuff();
@@ -120,7 +120,8 @@ function devCountAll(){ let c=0; for (const p of allPlanets()) if (devLevel(p) >
 function civIndex(){
   return Math.log10(1 + totalPop()) + Math.log10(1 + totalRes())
        + 0.25 * Math.min(sumLevels('hab'), sumLevels('res'))
-       + (save.story ? save.story.buffs.civ : 0);
+       + (save.story ? save.story.buffs.civ : 0)
+       + (typeof COLONY_FX !== 'undefined' ? COLONY_FX.civ : 0);
 }
 function civTier(){
   const ci = civIndex();

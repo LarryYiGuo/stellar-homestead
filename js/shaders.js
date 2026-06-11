@@ -37,6 +37,10 @@ varying vec3 vNormal; varying vec3 vObjPos; varying vec3 vWorldPos;
 uniform float uTime, uSeed, uDev, uAtmoS, uBandFreq, uPolarIce, uSea, uArch;
 uniform int uType;
 uniform vec3 uC1, uC2, uC3, uAtmo, uSunPos;
+uniform vec3 uDistDir[5];
+uniform vec3 uDistCol[5];
+uniform float uDistR[5];
+uniform float uDistProg[5];
 ${NOISE_GLSL}
 
 void main(){
@@ -119,6 +123,24 @@ void main(){
     if (uType == 3) cities = smoothstep(0.72,0.9,fbm(sp*8.0+41.7))*0.5;
     float night = 1.0 - dayMix;
     col += vec3(1.0, 0.78, 0.45) * cities * night * uDev * 1.6;
+  }
+
+  // ── 殖民区划:圈定在星球表面的功能分区 ──
+  for (int i = 0; i < 5; i++){
+    float rr = uDistR[i];
+    if (rr < 0.01) continue;
+    float ang = acos(clamp(dot(P, uDistDir[i]), -1.0, 1.0));
+    float ring = smoothstep(rr*1.12, rr, ang) * (1.0 - smoothstep(rr, rr*0.88, ang));
+    float fillm = 1.0 - smoothstep(rr*0.9, rr, ang);
+    vec3 dc = uDistCol[i];
+    if (uDistProg[i] >= 1.0){
+      col = mix(col, dc, fillm * 0.09);                       // 建成:淡色填充
+      col += dc * ring * 0.5 * (0.4 + 0.6*dayMix);            // + 实心环
+    } else {
+      float pulse = 0.45 + 0.55*sin(uTime*2.2 + float(i)*1.7);
+      col += dc * ring * 0.5 * pulse;                          // 施工中:脉冲环
+      col = mix(col, dc, fillm * 0.05 * uDistProg[i]);
+    }
   }
 
   float fres = pow(1.0 - max(dot(N, V), 0.0), 2.6);

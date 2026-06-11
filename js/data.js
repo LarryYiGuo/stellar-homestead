@@ -430,9 +430,10 @@ const WEAPONS = {
     base:{ metal:900, chem:1200 } },
 };
 const WEAPON_MAXLV = 5;
-function weaponCost(wid, lv){          // 升到 lv 级的花费(lv1 = 安装)
+function weaponCost(wid, lv){          // 升到 lv 级的花费(lv1 = 安装);弹药工厂提供折扣
   const base = WEAPONS[wid].base, out = {};
-  for (const k in base) out[k] = Math.round(base[k] * Math.pow(2.5, lv - 1));
+  const disc = (typeof COLONY_FX !== 'undefined') ? COLONY_FX.wcost : 1;
+  for (const k in base) out[k] = Math.round(base[k] * Math.pow(2.5, lv - 1) * disc);
   return out;
 }
 
@@ -466,6 +467,75 @@ function engineSpeed(lv){ return 2.0 * (1 + 0.6 * (lv - 1)); }   // 银河单位
 
 /* 收取冷却(秒) */
 const COLLECT_CD_BASE = 180;
+
+/* ============================================================
+   殖民区划与建筑 — 殖民地深度玩法
+   区划:圈定在星球表面的功能分区,随开发等级自动开辟(LV n = n 个区划位)
+   建筑:图鉴列表,条件满足后在对应区划内自动排队建造
+   列车驻留本星系 = 商贸加速(建设 ×2);注资可立即完工
+   ============================================================ */
+const DISTRICT_MAX = 5;            // 区划位上限 = 最高开发等级
+const BUILDS_PER_DISTRICT = 2;     // 每个区划容纳建筑数
+
+const DISTRICT_TYPES = {
+  habitation: { name:'民生区', color:'#3ecf8e', col3:[0.24,0.81,0.56], investRes:'chem',
+    desc:'居住穹顶与生活设施,承载人口与乘员类建筑' },
+  industry:   { name:'工业区', color:'#f59e0b', col3:[0.96,0.62,0.04], investRes:'ice',
+    desc:'采掘与精炼集群,承载产能类建筑' },
+  arsenal:    { name:'军工区', color:'#ef4444', col3:[0.94,0.27,0.27], investRes:'he3',
+    desc:'军事工业带,承载武器与防御类建筑' },
+  research:   { name:'科研区', color:'#22d3ee', col3:[0.13,0.83,0.93], investRes:'deut',
+    desc:'实验室阵列,承载文明与引擎类建筑' },
+  trade:      { name:'商贸区', color:'#8b5cf6', col3:[0.55,0.36,0.96], investRes:null,
+    desc:'星港与市场,承载物流与贸易类建筑' },
+};
+// 区划自动开辟的类型倾向(按星球角色)
+const DISTRICT_PREF = {
+  hab: ['habitation','trade','research','industry','arsenal'],
+  res: ['industry','arsenal','trade','research','habitation'],
+};
+
+/* 建筑图鉴:cond = 解锁条件;fx = 效果
+   fx 键:cap 本星人口上限 / prod 本星产率 / amt 收取量 / cargo 货舱
+          wcost 武器费率 / ecost 引擎费率 / cd 收取冷却减秒 / loot 战利品
+          civ 文明指数 / def 列车防御 / crew 可招募乘员(车组系统预留) */
+const BUILDINGS = {
+  /* 民生区 */
+  dome:       { name:'穹顶居住群',   district:'habitation', time:600,
+    cond:{role:'hab', lv:2}, fx:{cap:0.12},  desc:'本星人口上限 +12%' },
+  medbay:     { name:'再生医疗中心', district:'habitation', time:900,
+    cond:{role:'hab', lv:3}, fx:{cap:0.10},  desc:'本星人口上限 +10%' },
+  academy:    { name:'乘员训练营',   district:'habitation', time:1200,
+    cond:{lv:3, civ:8},      fx:{crew:1},    desc:'培养 1 名列车乘员(车组系统筹备中)' },
+  /* 工业区 */
+  mine:       { name:'自动化矿场',   district:'industry', time:600,
+    cond:{role:'res', lv:2}, fx:{prod:0.15}, desc:'本星资源产率 +15%' },
+  refinery:   { name:'行星精炼厂',   district:'industry', time:900,
+    cond:{role:'res', lv:3}, fx:{amt:0.08},  desc:'列车收取量 +8%(全银河)' },
+  elevator:   { name:'轨道电梯',     district:'industry', time:1500,
+    cond:{lv:4},             fx:{cargo:0.10},desc:'列车货舱容量 +10%(全银河)' },
+  /* 军工区 */
+  ammo:       { name:'弹药联合工厂', district:'arsenal', time:600,
+    cond:{lv:2},             fx:{wcost:0.12},desc:'武器安装/升级费 -12%(可叠加,下限 50%)' },
+  foundry:    { name:'聚变弹头铸造坊', district:'arsenal', time:900,
+    cond:{lv:3},             fx:{loot:0.10}, desc:'遭遇战战利品 +10%' },
+  fortress:   { name:'轨道防御平台', district:'arsenal', time:1500,
+    cond:{lv:4},             fx:{def:10},    desc:'列车防御 +10(全银河)' },
+  /* 科研区 */
+  observatory:{ name:'深空天文台',   district:'research', time:600,
+    cond:{lv:2},             fx:{civ:0.15},  desc:'文明指数 +0.15' },
+  enginst:    { name:'引擎研究所',   district:'research', time:1200,
+    cond:{lv:3},             fx:{ecost:0.10},desc:'引擎升级费 -10%(可叠加,下限 50%)' },
+  lab:        { name:'量子实验室',   district:'research', time:1500,
+    cond:{lv:4, civ:10},     fx:{civ:0.30},  desc:'文明指数 +0.30' },
+  /* 商贸区 */
+  port:       { name:'自由贸易港',   district:'trade', time:600,
+    cond:{lv:2},             fx:{cd:15},     desc:'收取冷却 -15 秒(全银河)' },
+  bazaar:     { name:'星港集市',     district:'trade', time:900,
+    cond:{lv:3},             fx:{amt:0.08},  desc:'列车收取量 +8%(全银河)' },
+  clearing:   { name:'星际清算所',   district:'trade', time:1500,
+    cond:{lv:4, civ:12},     fx:{loot:0.10, civ:0.10}, desc:'战利品 +10% · 文明指数 +0.10' },
+};
 
 /* ============================================================
    列车遭遇战 — 回合制自走棋(部署指令 → 自动结算)
