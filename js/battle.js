@@ -10,14 +10,14 @@ function battleOpen(){ return $('battle-overlay').classList.contains('show'); }
 function shuffle(a){ for (let i = a.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
 /* ── 开战 ── */
-function mkEnemy(tid, i, scale){
+function mkEnemy(tid, i, rg){
   const t = ENEMY_TYPES[tid];
   const jit = 0.85 + Math.random() * 0.3;
   return {
     tid, icon: t.icon, prefer: t.prefer,
     name: t.name + '-' + String.fromCharCode(65 + i),
-    hp: Math.round(t.hp * scale * jit), maxHp: Math.round(t.hp * scale * jit),
-    atk: Math.round(t.atk * scale * (0.9 + Math.random() * 0.2)),
+    hp: Math.round(t.hp * rg.hpS * jit), maxHp: Math.round(t.hp * rg.hpS * jit),
+    atk: Math.round(t.atk * rg.atkS * (0.9 + Math.random() * 0.2)),
     affix: null, intent: null, stunned: false, negated: false,
   };
 }
@@ -28,23 +28,25 @@ function openBattle(sysId){
     return;
   }
   const sys = sysById(sysId);
+  const rg = REGIONS[regionOf(sys)];          // 星图区域决定敌人强度
+  if (!rg.hpS) return;                        // 安全区无战斗
   const isBoss = !!(save.pendingRaid && save.pendingRaid.boss) && !!BOSSES[sysId];
   const h = Math.min(6, Math.max(1, sys.hazard));
-  const scale = raidScale(h) * (1 + 0.05 * (save.train.engineLv - 1));
 
   let enemies = [], boss = null;
   if (isBoss){
     boss = BOSSES[sysId];
+    const bhp = Math.round(boss.hpBase * rg.hpS * 0.7 + firepower() * 3);
     const bu = {
       tid:'boss', icon: boss.icon, prefer: boss.prefer, isBoss: true,
       name: boss.name,
-      hp: boss.hpBase + firepower() * 4, maxHp: boss.hpBase + firepower() * 4,
-      atk: boss.atkBase + save.train.engineLv * 2,
+      hp: bhp, maxHp: bhp,
+      atk: Math.round(boss.atkBase * rg.atkS * 0.85),
       affix: null, intent: null, stunned: false, negated: false, charging: false,
     };
-    enemies = [bu, ...boss.escorts.map((tid, i) => mkEnemy(tid, i, scale))];
+    enemies = [bu, ...boss.escorts.map((tid, i) => mkEnemy(tid, i, rg))];
   } else {
-    enemies = RAID_COMPS[h].map((tid, i) => mkEnemy(tid, i, scale));
+    enemies = RAID_COMPS[h].map((tid, i) => mkEnemy(tid, i, rg));
     // 精英词缀:危险度 3-4 一个,5+ 两个;精英体质 ×1.4
     const nElite = h >= 5 ? 2 : h >= 3 ? 1 : 0;
     const keys = Object.keys(AFFIXES);
@@ -56,14 +58,17 @@ function openBattle(sysId){
       e.name = '★' + e.name;
     }
   }
-  const cars = save.train.cars.map((c, idx) => ({
-    idx, type: c.type, wid: c.wid || null, wlv: c.wlv || 0,
-    maxHp: CAR_HP[c.type],
-    hp: c.damaged ? 0 : CAR_HP[c.type],
-    down: !!c.damaged, immune: false,
-  }));
+  const hpS = battleHpScale();                // 车厢耐久随引擎成长
+  const cars = save.train.cars.map((c, idx) => {
+    const mh = Math.round(CAR_HP[c.type] * hpS);
+    return {
+      idx, type: c.type, wid: c.wid || null, wlv: c.wlv || 0,
+      maxHp: mh, hp: c.damaged ? 0 : mh,
+      down: !!c.damaged, immune: false,
+    };
+  });
   B = {
-    sys, boss, round: 1, maxRounds: isBoss ? 12 : BATTLE_MAX_ROUNDS,
+    sys, boss, region: rg, round: 1, maxRounds: isBoss ? 12 : BATTLE_MAX_ROUNDS,
     phase: 'plan', enemies, cars,
     value: enemies.reduce((s, e) => s + e.maxHp + e.atk * 4, 0),
     drawPile: shuffle(save.deck.slice()), discardPile: [], hand: [], exhausted: [],
@@ -187,12 +192,12 @@ function applyCard(cid, ti){
       blog('引擎功率灌入护盾 —— 受到伤害 -80%'); break;
     case 'repair': {
       const h = worstCar();
-      if (h){ h.hp = Math.min(h.maxHp, h.hp + 45); blog(`损管队抢修「${carLabel(h)}」 +45`); }
+      if (h){ const amt = Math.round(h.maxHp * 0.35); h.hp = Math.min(h.maxHp, h.hp + amt); blog(`损管队抢修「${carLabel(h)}」 +${amt}`); }
       else blog('损管队待命 —— 无需抢修');
       break; }
     case 'patch':
-      for (const c2 of aliveCars()) c2.hp = Math.min(c2.maxHp, c2.hp + 14);
-      blog('装甲重组 —— 全列车厢 +14'); break;
+      for (const c2 of aliveCars()) c2.hp = Math.min(c2.maxHp, c2.hp + Math.round(c2.maxHp * 0.12));
+      blog('装甲重组 —— 全列车厢恢复 12% 耐久'); break;
     case 'evade':
       fx.evadeP = Math.max(fx.evadeP, 0.4);
       blog('列车开始规避机动'); break;
@@ -236,7 +241,7 @@ function applyCard(cid, ti){
       if (c2){ c2.down = false; c2.hp = Math.round(c2.maxHp * 0.4); blog(`野战重启 —— 「${carLabel(c2)}」恢复运作(40%)`); }
       break; }
     case 'railgun':
-      hitEnemy(tgt, 60 + save.train.engineLv * 10, '轨道炮支援');
+      hitEnemy(tgt, 60 + save.train.engineLv * 25, '轨道炮支援');
       break;
     case 'timewarp':
       for (const e of aliveEnemies()) e.stunned = true;
@@ -261,8 +266,9 @@ function hitEnemy(e, dmg, tag){
     if (e.affix === 'volatile'){
       const t = aliveCars()[Math.floor(Math.random() * aliveCars().length)];
       if (t && !t.immune){
-        t.hp = Math.max(0, t.hp - 15);
-        blog(`💥 ${e.name} 自爆,「${carLabel(t)}」 -15`);
+        const amt = Math.round(t.maxHp * 0.12);
+        t.hp = Math.max(0, t.hp - amt);
+        blog(`💥 ${e.name} 自爆,「${carLabel(t)}」 -${amt}`);
         checkCarDown(t);
       }
     }
@@ -367,7 +373,7 @@ function startRound(){
   if (B.fx.overload) steps.push(() => {
     for (const car of B.cars){
       if (car.type !== 'weapon' || !car.wid || car.down) continue;
-      car.hp = Math.max(0, car.hp - 12);
+      car.hp = Math.max(0, car.hp - Math.round(car.maxHp * 0.1));
       if (car.hp <= 0){ car.down = true; blog(`⚠ 「${carLabel(car)}」过载烧毁,瘫痪!`); }
     }
   });
@@ -381,7 +387,7 @@ function startRound(){
     }
     for (const ec of B.cars.filter(c => c.type === 'eng' && !c.down)){
       const h = worstCar();
-      if (h){ h.hp = Math.min(h.maxHp, h.hp + 10 * B.fx.engBoost); blog(`工程舱自动修复「${carLabel(h)}」 +${10 * B.fx.engBoost}`); }
+      if (h){ const amt = Math.round(h.maxHp * 0.08) * B.fx.engBoost; h.hp = Math.min(h.maxHp, h.hp + amt); blog(`工程舱自动修复「${carLabel(h)}」 +${amt}`); }
     }
     if (!aliveEnemies().length) return finishBattle('victory');
     if (B.cars.some(c => c.type === 'engine' && c.down)) return finishBattle('defeat');
@@ -390,8 +396,7 @@ function startRound(){
     // Boss 技能调度
     const bu = B.enemies.find(e => e.isBoss && e.hp > 0);
     if (bu && B.boss.skill === 'summon' && B.round % 3 === 0 && aliveEnemies().length < 7){
-      const scale = raidScale(Math.min(6, B.sys.hazard)) * (1 + 0.05 * (save.train.engineLv - 1));
-      for (let i = 0; i < 2; i++) B.enemies.push(mkEnemy('raider', B.enemies.length, scale));
+      for (let i = 0; i < 2; i++) B.enemies.push(mkEnemy('raider', B.enemies.length, B.region));
       blog(`☠ ${bu.name} 放出增援 —— 2 艘掠袭艇入场`);
     }
     if (bu && B.boss.skill === 'charge' && B.round % 3 === 0 && !bu.charging){
@@ -428,7 +433,7 @@ function planEscape(){
 function autoResolveBattle(){
   if (B.phase !== 'plan' || B.round !== 1 || B.boss) return;   // Boss 战必须亲自打
   const power = firepower() + defense();
-  const threat = Math.round(B.value / 3.4);
+  const threat = Math.round(B.value / (4.5 * battleHpScale()));
   if (power >= threat){
     blog(`舰桥代理交战:火力 ${power} ≥ 威胁 ${threat},袭击者被击退`);
     B.autoMult = 0.85; B.noChoice = true;
@@ -465,7 +470,7 @@ function finishBattle(result){
   if (result === 'victory' || result === 'withdraw' || result === 'escape'){
     let mult = result === 'victory' ? 1 : result === 'withdraw' ? 0.5 : 0.7;
     mult *= (B.autoMult || 1) * (cargoDown ? 0.6 : 1) * (isBoss ? B.boss.lootMult : 1);
-    const total = Math.round(B.value * 3 * sys.rich * mult);
+    const total = Math.round(B.value * 3 * sys.rich * mult * (B.region ? B.region.loot : 1));
     const mainKey = (sys.bias && sys.bias !== 'hab') ? sys.bias : 'metal';
     const keys = Object.keys(RESOURCES).filter(k => k !== mainKey);
     const sideKey = keys[Math.floor(Math.random() * keys.length)];

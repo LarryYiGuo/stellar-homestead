@@ -23,7 +23,11 @@ function defense(){
   return 10 + countCarType('habitat') * CAR_TYPES.habitat.def;
 }
 function cargoCap(){
-  return countCarType('cargo') * CAR_TYPES.cargo.cap * (1 + 0.25 * (save.train.engineLv - 1));
+  // 几何成长:后期收取量必须跟上升级成本的数量级,否则流程卡死
+  return Math.round(countCarType('cargo') * CAR_TYPES.cargo.cap * Math.pow(2.5, save.train.engineLv - 1));
+}
+function battleHpScale(){             // 战斗中车厢耐久随引擎成长
+  return 1 + 0.35 * (save.train.engineLv - 1);
 }
 function collectBuff(){ return 1 + countCarType('eng') * CAR_TYPES.eng.collectBuff; }
 function collectCd(){
@@ -80,10 +84,12 @@ function checkArrival(){
   const firstVisit = !save.visited[sys.id];
   save.visited[sys.id] = true;
   let raidPending = false;
-  if (BOSSES[sys.id] && !save.bossKills[sys.id]){
+  const region = regionOf(sys);
+  if (region > 0 && BOSSES[sys.id] && !save.bossKills[sys.id]){
     save.pendingRaid = { sysId: sys.id, at: Date.now(), boss: true };   // 首访 Boss 必战
     raidPending = true;
-  } else if (sys.hazard > 0 && Math.random() < 0.35 + sys.hazard * 0.11){
+  } else if (region > 0 && sys.hazard > 0 &&
+             Math.random() < Math.min(0.85, 0.3 + sys.hazard * 0.1)){   // 安全区(母星系)绝不遭遇
     save.pendingRaid = { sysId: sys.id, at: Date.now() };
     raidPending = true;
   }

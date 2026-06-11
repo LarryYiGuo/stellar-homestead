@@ -201,8 +201,9 @@ function renderSysPanel(){
     <div class="divider"></div>
     <div class="sec-label">星系参数</div>
     <div class="phys">
+      <div class="item"><div class="k">星图区域</div><div class="v" style="color:${['var(--green)','var(--text)','var(--amber)','#fb923c','var(--red)'][regionOf(sys)]}">${REGIONS[regionOf(sys)].name}</div></div>
+      <div class="item"><div class="k">危险度</div><div class="v">${regionOf(sys) === 0 ? '无 · 安全区' : hazardStars}</div></div>
       <div class="item"><div class="k">距列车位置</div><div class="v">${here ? '0' : d === null ? '航行中' : d.toFixed(1) + ' 单位'}</div></div>
-      <div class="item"><div class="k">危险度</div><div class="v">${hazardStars}</div></div>
       <div class="item"><div class="k">资源丰度</div><div class="v">×${sys.rich.toFixed(1)}</div></div>
       <div class="item"><div class="k">状态</div><div class="v">${here?'驻留':visited?'已探索':'未探索'}</div></div>
     </div>

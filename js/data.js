@@ -141,6 +141,22 @@ function sysDist(a, b){
   return Math.hypot(A[0]-B[0], A[1]-B[1]);
 }
 
+/* ── 星图区域:按距母星系的距离划分,决定敌人强度与战利品规模 ──
+   母星系 = 永久安全区,绝不触发遭遇战 */
+const REGIONS = [
+  { name:'安全区', maxD:0,        hpS:0,   atkS:0,   loot:0  },
+  { name:'近域',   maxD:12,       hpS:1.0, atkS:1.0, loot:1  },
+  { name:'边域',   maxD:26,       hpS:1.8, atkS:1.5, loot:4  },
+  { name:'深空',   maxD:45,       hpS:3.2, atkS:2.3, loot:12 },
+  { name:'外环',   maxD:Infinity, hpS:5.5, atkS:3.7, loot:30 },
+];
+function regionOf(sys){
+  if (sys.id === 'kenxi') return 0;
+  const d = Math.hypot(sys.pos[0], sys.pos[1]);
+  for (let i = 1; i < REGIONS.length; i++) if (d <= REGIONS[i].maxD) return i;
+  return REGIONS.length - 1;
+}
+
 /* ============================================================
    垦曦星系 — 手作行星(原版 v12 全量保留)
    ============================================================ */
@@ -391,7 +407,7 @@ const CAR_TYPES = {
   engine:  { name:'动力车头', en:'LOCOMOTIVE',
     desc:'列车的核心聚变堆与曲率帆。升级引擎可提升航速,并解锁更远的星系航线。' },
   cargo:   { name:'货运车厢', en:'CARGO',  cap:800,
-    desc:'标准化货舱。每节 +800 装载容量,决定每次靠站能收取多少资源。' },
+    desc:'标准化货舱。基础装载 800/节,容量随引擎等级几何增长(×2.5/级),决定每次靠站能收取多少资源。' },
   weapon:  { name:'武器平台', en:'WEAPON',
     desc:'装甲化武器底座,可安装并升级一门列车武器,用于击退航线上的袭击者。' },
   habitat: { name:'生活舱段', en:'HABITAT', cdRed:30, def:18,
@@ -472,8 +488,7 @@ const RAID_COMPS = {
   5: ['breaker','breaker','driller','raider','swarmer'],
   6: ['breaker','breaker','driller','driller','raider','raider'],
 };
-// 敌方属性随危险度成长
-function raidScale(hazard){ return 1 + 0.18 * (hazard - 1); }
+// 敌方编队构成由危险度决定(兵种混编),强度由星图区域决定(REGIONS)
 
 /* ── 战术指令卡(卡组构筑:胜利后可选新卡入组) ── */
 const CARD_RARITY = {
@@ -488,13 +503,13 @@ const CARDS = {
   shield:   { name:'偏导护盾', cp:1, rarity:'common',
     desc:'本回合全列受到的伤害 -50%' },
   repair:   { name:'损管抢修', cp:1, rarity:'common',
-    desc:'立即修复受损最重的车厢 45 点' },
+    desc:'立即修复受损最重的车厢 35% 耐久' },
   evade:    { name:'规避机动', cp:1, rarity:'common',
     desc:'本回合敌方攻击 40% 概率落空' },
   overload: { name:'武器过载', cp:1, rarity:'common',
-    desc:'本回合武器伤害 +100%,每座炮塔自损 12 点' },
+    desc:'本回合武器伤害 +100%,每座炮塔自损 10% 耐久' },
   patch:    { name:'装甲重组', cp:1, rarity:'common',
-    desc:'全部未瘫痪车厢立即恢复 14 点' },
+    desc:'全部未瘫痪车厢立即恢复 12% 耐久' },
   calibrate:{ name:'精确校射', cp:0, rarity:'common',
     desc:'本回合武器暴击率 +40%(暴击 ×1.6)' },
   engsupport:{ name:'工程支援', cp:0, rarity:'common', requires:'eng',
@@ -518,7 +533,7 @@ const CARDS = {
   revive:   { name:'野战重启', cp:2, rarity:'epic', exhaust:true,
     desc:'重新激活一节瘫痪车厢(40% 耐久)· 本场限一次' },
   railgun:  { name:'轨道支援', cp:2, rarity:'epic', needTarget:true,
-    desc:'呼叫殖民地轨道炮:对目标造成 60 + 引擎等级×10 伤害' },
+    desc:'呼叫殖民地轨道炮:对目标造成 60 + 引擎等级×25 伤害' },
   timewarp: { name:'跃迁脉冲', cp:2, rarity:'epic', exhaust:true,
     desc:'扭曲局部时空,敌方全体本回合无法行动 · 本场限一次' },
 };
@@ -531,7 +546,7 @@ const BATTLE_MAX_ROUNDS = 9;     // 超时敌方撤退,战利品减半(Boss 战 
 const AFFIXES = {
   armored: { name:'装甲', color:'#9298a8', desc:'受到伤害 -30%(穿甲弹药可破解)' },
   swift:   { name:'迅捷', color:'#22d3ee', desc:'先于列车武器行动' },
-  volatile:{ name:'自爆', color:'#f59e0b', desc:'被击毁时炸伤随机车厢 15 点' },
+  volatile:{ name:'自爆', color:'#f59e0b', desc:'被击毁时炸伤随机车厢 12% 耐久' },
   regen:   { name:'自愈', color:'#3ecf8e', desc:'每回合末恢复 8 点' },
   sniper:  { name:'狙击', color:'#ef4444', desc:'专挑残血车厢攻击' },
   command: { name:'旗舰', color:'#8b5cf6', desc:'存活时,其余敌舰火力 +25%' },

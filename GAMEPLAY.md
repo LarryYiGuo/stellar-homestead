@@ -39,6 +39,7 @@ Encounter battles (turn-based, deck-building) → loot & new tactic cards
 
 ### Battles (turn-based auto-battler with deck-building)
 
+- The galaxy is divided into four **regions** by distance from home — Inner Reach, Border, Deep Space, Outer Ring — and enemy strength (and loot) scales with the region. The home system Kenxi is a permanent **safe zone**: no encounters, ever.
 - Arriving in hazardous systems can trigger an encounter. Each round has two phases:
   1. **Deploy** — draw 4 cards from your tactic deck and play them with command points (3, +1 with a habitat car). Enemy intents (which car they'll hit, for how much) are fully visible. "Full-speed escape" is always available as a fixed order.
   2. **Resolve** — automatic exchange of fire, animated log.
@@ -92,6 +93,7 @@ Encounter battles (turn-based, deck-building) → loot & new tactic cards
 
 ### 遭遇战(回合制自走棋 + 卡组构筑)
 
+- 银河按距母星系的距离分四个**星图区域**——近域、边域、深空、外环——敌人强度与战利品随区域阶梯式提升。母星系垦曦是永久**安全区**,绝不会触发遭遇战。
 - 抵达高危星系概率触发。每回合两段:
   1. **部署**——从指令卡组抽 4 张手牌,用指挥点(3,有生活舱 +1)打出;敌舰意图(打哪节车厢、多少伤害)完全明牌。"全速脱离"是常驻固定指令。
   2. **结算**——自动交火,逐条战报动画。
