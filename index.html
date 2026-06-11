@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>星垦 · Stellar Homestead — 银河纪元</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/main.css?v=4">
+</head>
+<body>
+
+<div id="loader">
+  <div class="star-pulse"></div>
+  <p>正在生成银河 · Generating Galaxy</p>
+</div>
+
+<div id="canvas-wrap"></div>
+<div id="labels"></div>
+
+<header id="topbar">
+  <div class="sys-name"><span id="loc-name">银河系</span><span class="en" id="loc-en">GALAXY</span></div>
+  <div class="right-side">
+    <div class="stats">
+      <div class="stat"><div class="lbl" id="civ-tier">文明指数</div><div class="val" id="civ-index">0.00</div></div>
+      <div class="stat"><div class="lbl">总人口</div><div class="val dim" id="pop-total">0</div></div>
+      <div class="stat"><div class="lbl">已开发</div><div class="val dim" id="dev-count">0</div></div>
+    </div>
+    <button id="galaxy-btn" title="银河系总图">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><path d="M12 3c5 0 9 4 9 9 0 2.5-1 4.8-2.6 6.4M12 21c-5 0-9-4-9-9 0-2.5 1-4.8 2.6-6.4"/><path d="M12 7.5c2.5 0 4.5 2 4.5 4.5M12 16.5c-2.5 0-4.5-2-4.5-4.5"/></svg>
+    </button>
+    <button id="train-btn" title="星际列车">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="12" rx="3"/><path d="M4 11h16M9 4v7M15 4v7"/><circle cx="8.5" cy="19.5" r="1.2"/><circle cx="15.5" cy="19.5" r="1.2"/><path d="M6 16l-1.5 3M18 16l1.5 3"/></svg>
+      <span class="badge" id="train-badge"></span>
+    </button>
+    <button id="bgm-btn" title="背景音乐">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor" stroke="none"/><path class="wv" d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9.5 9.5 0 0 1 0 14"/></svg>
+    </button>
+    <button id="set-btn" title="系统">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<button id="back-btn">← 返回</button>
+
+<aside id="panel"><div class="inner" id="panel-body"></div></aside>
+
+<nav id="dock"></nav>
+<div id="toast"></div>
+<div id="tip">拖动旋转 · 滚轮缩放 · 点击星体查看</div>
+
+<button class="nav-arrow" id="nav-prev" title="上一颗行星">‹</button>
+<button class="nav-arrow" id="nav-next" title="下一颗行星">›</button>
+
+<button id="signal-btn"><span class="sdot"></span>深空讯号 · 接收</button>
+<div id="story-overlay"><div id="story-card"></div></div>
+<div id="settings-overlay"><div id="settings-card"></div></div>
+<div id="train-overlay"><div id="train-card"></div></div>
+<div id="battle-overlay"><div id="battle-card"></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="js/data.js?v=4"></script>
+<script src="js/save.js?v=4"></script>
+<script src="js/economy.js?v=4"></script>
+<script src="js/train.js?v=4"></script>
+<script src="js/shaders.js?v=4"></script>
+<script src="js/render.js?v=4"></script>
+<script src="js/ui.js?v=4"></script>
+<script src="js/trainui.js?v=4"></script>
+<script src="js/battle.js?v=4"></script>
+<script src="js/audio.js?v=4"></script>
+<script src="js/main.js?v=4"></script>
+</body>
+</html>
