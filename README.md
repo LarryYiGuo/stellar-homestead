@@ -30,7 +30,7 @@ A 3D idle space-colony game with an upgradeable interstellar train and turn-base
 
 ### Development notes
 
-- Plain HTML / CSS / JS. All numbers and content live in `js/data.js`; rendering in `js/render.js`; battles in `js/battle.js`; UI in `js/ui.js` / `js/trainui.js`.
+- Plain HTML / CSS / JS. All numbers and content live in `js/data.js`; rendering in `js/render.js`; battles in `js/battle.js`; colony districts in `js/colony.js`; UI in `js/ui.js` / `js/trainui.js`.
 - Local scripts are referenced with a `?v=N` cache-busting query in `index.html` — bump it whenever you edit JS/CSS.
 
 ### License

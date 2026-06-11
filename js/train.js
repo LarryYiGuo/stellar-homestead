@@ -26,15 +26,17 @@ function cargoCap(){
   // 几何成长:后期收取量必须跟上升级成本的数量级,否则流程卡死
   return Math.round(countCarType('cargo') * CAR_TYPES.cargo.cap * Math.pow(2.5, save.train.engineLv - 1) * COLONY_FX.cargo);
 }
-function battleHpScale(){             // 战斗中车厢耐久随引擎成长
-  return 1 + 0.35 * (save.train.engineLv - 1);
+function battleHpScale(){             // 战斗中车厢耐久随引擎成长;研发:复合装甲
+  return (1 + 0.35 * (save.train.engineLv - 1)) * (1 + 0.12 * techLv('armor'));
 }
 function collectBuff(){ return 1 + countCarType('eng') * CAR_TYPES.eng.collectBuff; }
 function collectCd(){
-  return Math.max(45, COLLECT_CD_BASE - countCarType('habitat') * CAR_TYPES.habitat.cdRed - COLONY_FX.cd);
+  const base = (COLLECT_CD_BASE - countCarType('habitat') * CAR_TYPES.habitat.cdRed - COLONY_FX.cd)
+             * Math.pow(0.92, techLv('logi'));               // 研发:物流调度
+  return Math.max(30, Math.round(base));
 }
-function trainSpeed(){                      // 单位/分钟;引擎受损减半
-  return engineSpeed(save.train.engineLv) * (engineDamaged() ? 0.5 : 1);
+function trainSpeed(){                      // 单位/分钟;引擎受损减半;研发:曲率精调
+  return engineSpeed(save.train.engineLv) * (engineDamaged() ? 0.5 : 1) * (1 + 0.1 * techLv('warp'));
 }
 function damagedCars(){ return trainCars().filter(c => c.damaged); }
 

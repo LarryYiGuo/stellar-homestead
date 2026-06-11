@@ -86,7 +86,7 @@ function openBattle(sysId){
 }
 
 function newPlanPhase(first){
-  B.cpMax = 3 + (B.cars.some(c => c.type === 'habitat' && !c.down) ? 1 : 0);
+  B.cpMax = 3 + (B.cars.some(c => c.type === 'habitat' && !c.down) ? 1 : 0) + techLv('cmd');
   B.cp = B.cpMax;
   B.fx = { focusIdx: null, dmgMult: 0, shieldMult: 1, evadeP: 0, critP: 0,
            extraVolley: false, pierce: false, overload: false, engBoost: 1 };
@@ -231,7 +231,7 @@ function applyCard(cid, ti){
     case 'missilerain': {
       for (const car of B.cars){
         if (car.type !== 'weapon' || car.wid !== 'missile' || car.down) continue;
-        const dmg = Math.round(WEAPONS.missile.fp * car.wlv * 1.2);
+        const dmg = Math.round(WEAPONS.missile.fp * car.wlv * 1.2 * (1 + 0.08 * techLv('fire')));
         for (const e of aliveEnemies()) hitEnemy(e, dmg, '全弹发射');
       }
       break; }
@@ -332,7 +332,7 @@ function weaponFireStep(car){
     const volleys = 1 + (B.fx.extraVolley ? 1 : 0);
     for (let v = 0; v < volleys; v++){
       if (!aliveEnemies().length) break;
-      let mult = 1 + B.fx.dmgMult;
+      let mult = (1 + B.fx.dmgMult) * (1 + 0.08 * techLv('fire'));   // 研发:火控算法
       const foc = B.fx.focusIdx !== null ? B.enemies[B.fx.focusIdx] : null;
       const critP = (car.wid === 'laser' ? 0.25 : 0) + B.fx.critP;
       const roll = () => Math.random() < critP ? 1.6 : 1;

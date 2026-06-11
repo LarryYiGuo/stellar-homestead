@@ -4,8 +4,15 @@
    列车驻留本星系 → 建设速度 ×2(商贸加速);注资 → 立即完工
    ============================================================ */
 
-/* 全局效果聚合(每秒由 tickUI 重算) */
-let COLONY_FX = { wcost:1, ecost:1, cd:0, amt:1, cargo:1, loot:1, civ:0, def:0, crew:0, prod:{}, cap:{} };
+/* 全局效果聚合(每秒由 tickUI 重算);rp = 科研值产率(/秒) */
+let COLONY_FX = { wcost:1, ecost:1, cd:0, amt:1, cargo:1, loot:1, civ:0, def:0, crew:0, rp:0, prod:{}, cap:{} };
+
+/* 区划位:环境上限(宜居20/艰苦8/严酷4)随开发等级 1/5 → 5/5 逐步解锁 */
+function unlockedSlots(p){
+  const lv = devLevel(p);
+  if (lv === 0) return 0;
+  return Math.ceil(envTier(p).slots * lv / MAX_LEVEL);
+}
 
 function colonyState(p){
   if (!save.colony) save.colony = {};
@@ -24,12 +31,52 @@ function districtDir(p, i){
   return [Math.cos(ang) * s, y, Math.sin(ang) * s];
 }
 
+/* ── 环境分级与可开辟区划 ── */
+function envTier(p){
+  for (const t of ENV_TIERS) if (p.habit < t.th) return t;
+  return ENV_TIERS[ENV_TIERS.length - 1];
+}
+/* 返回 [type, weight] 列表:恶劣星球仅工业/科研;艰苦不建民生;卫星军工权重大增 */
+function allowedDistricts(p){
+  let list;
+  if (p.habit < 0.35){
+    list = [['industry', 4], ['research', 2]];
+  } else if (p.habit < 0.6){
+    list = [['industry', 3], ['arsenal', 2], ['research', 2], ['trade', 1]];
+  } else if (p.role === 'hab'){
+    list = [['habitation', 4], ['trade', 2], ['research', 2], ['industry', 1.5], ['arsenal', 1]];
+  } else {
+    list = [['industry', 3], ['trade', 2], ['research', 1.5], ['habitation', 1.5], ['arsenal', 1]];
+  }
+  if (p.moonOf){                       // 卫星 = 天然军事要冲
+    const i = list.findIndex(([t]) => t === 'arsenal');
+    const top = Math.max(...list.map(([,w]) => w));
+    if (i >= 0) list[i][1] = top * 1.6;
+    else list.push(['arsenal', top * 1.6]);
+  }
+  return list;
+}
 function pickDistrictType(p, st){
+  const allowed = allowedDistricts(p);
   const existing = st.districts.map(d => d.type);
-  const order = DISTRICT_PREF[p.role] || DISTRICT_PREF.res;
-  const pool = order.filter(t => !existing.includes(t));
-  const list = pool.length ? pool : order;
-  return list[Math.floor(Math.pow(Math.random(), 1.7) * list.length)];   // 偏向角色倾向前列
+  let pool = allowed.filter(([t]) => !existing.includes(t));   // 先求类型齐全
+  if (!pool.length) pool = allowed;                            // 再允许同类叠开
+  const total = pool.reduce((s, [, w]) => s + w, 0);
+  let r = Math.random() * total;
+  for (const [t, w] of pool){ r -= w; if (r <= 0) return t; }
+  return pool[0][0];
+}
+/* 旧档迁移:已存在但环境不允许的区划 → 就地改建为允许类型(清空其建筑) */
+function fixDistrictTypes(p, st){
+  const ok = allowedDistricts(p).map(([t]) => t);
+  let changed = false;
+  for (const d of st.districts){
+    if (ok.includes(d.type)) continue;
+    d.type = pickDistrictType(p, { districts: st.districts.filter(x => x !== d) });
+    d.builds = d.builds.filter(b => BUILDINGS[b.id].district === d.type);
+    changed = true;
+  }
+  if (changed) persistSave();
 }
 
 /* 建筑条件 */
@@ -75,7 +122,7 @@ function investCost(p, st){
     if (dDone(d)) done++;
     for (const b of d.builds) if (dDone(b)) done++;
   }
-  const base = Math.round(500 * Math.pow(2.2, done));
+  const base = Math.round(500 * Math.pow(2.2, Math.min(done, 14)));   // 封顶,避免后期注资价格失真
   const act = activeConstruction(st);
   const cost = { metal: base };
   if (act){
@@ -104,6 +151,7 @@ function colonyTick(){
   for (const p of allPlanets()){
     if (!save.est[p.key]) continue;
     const st = colonyState(p);
+    fixDistrictTypes(p, st);
     const lv = devLevel(p);
     const docked = save.train.status === 'docked' && save.train.sys === p.sysId && !save.pendingRaid;
 
@@ -122,10 +170,10 @@ function colonyTick(){
     }
     // 自动开工(一次一项):先开区划,后建建筑
     if (!activeConstruction(st)){
-      if (st.districts.length < Math.min(lv, DISTRICT_MAX)){
+      if (st.districts.length < unlockedSlots(p)){
         st.districts.push({
           type: pickDistrictType(p, st),
-          startAt: Date.now(), dur: 300 * (st.districts.length + 1),
+          startAt: Date.now(), dur: Math.round(240 * (1 + st.districts.length * 0.4)),
           builds: [],
         });
         persistSave();
@@ -150,16 +198,28 @@ function colonyTick(){
 
 /* ── 效果聚合 ── */
 function computeColonyFx(){
-  const fx = { wcost:1, ecost:1, cd:0, amt:1, cargo:1, loot:1, civ:0, def:0, crew:0, prod:{}, cap:{} };
+  const fx = { wcost:1, ecost:1, cd:0, amt:1, cargo:1, loot:1, civ:0, def:0, crew:0, rp:0, prod:{}, cap:{} };
   if (!save.colony) { COLONY_FX = fx; return; }
   for (const key in save.colony){
     const st = save.colony[key];
+    const p = planetByKey(key);
+    const envMult = p ? envTier(p).mult : 1;     // 严酷 ×3 / 艰苦 ×1.5 / 宜居 ×1
     for (const d of st.districts){
       if (!dDone(d)) continue;
+      // 区划固有加成(同类可叠加 × 环境效率)
+      const dfx = DISTRICT_FX[d.type];
+      if (dfx){
+        if (dfx.prod) fx.prod[key] = (fx.prod[key] || 1) + dfx.prod * envMult;
+        if (dfx.cap)  fx.cap[key]  = (fx.cap[key]  || 1) + dfx.cap;
+        if (dfx.amt)  fx.amt += dfx.amt;
+        if (dfx.civ)  fx.civ += dfx.civ * envMult;
+        if (dfx.def)  fx.def += dfx.def;
+        if (dfx.rp)   fx.rp  += dfx.rp * envMult;
+      }
       for (const b of d.builds){
         if (!dDone(b)) continue;
         const e = BUILDINGS[b.id].fx;
-        if (e.prod) fx.prod[key] = (fx.prod[key] || 1) + e.prod;
+        if (e.prod) fx.prod[key] = (fx.prod[key] || 1) + e.prod * envMult;
         if (e.cap)  fx.cap[key]  = (fx.cap[key]  || 1) + e.cap;
         if (e.amt)  fx.amt += e.amt;
         if (e.cargo)fx.cargo += e.cargo;
@@ -168,6 +228,7 @@ function computeColonyFx(){
         if (e.civ)  fx.civ += e.civ;
         if (e.def)  fx.def += e.def;
         if (e.crew) fx.crew += e.crew;
+        if (e.rp)   fx.rp  += e.rp * envMult;
         if (e.wcost) fx.wcost *= (1 - e.wcost);
         if (e.ecost) fx.ecost *= (1 - e.ecost);
       }
@@ -179,3 +240,27 @@ function computeColonyFx(){
 }
 function colonyProd(p){ return COLONY_FX.prod[p.key] || 1; }
 function colonyCap(p){ return COLONY_FX.cap[p.key] || 1; }
+
+/* ── 科研值:积累与研发消费 ── */
+function accrueResearch(){
+  const now = Date.now();
+  if (!save.rpAt) save.rpAt = now;
+  const dt = Math.min(86400 * 3, (now - save.rpAt) / 1000);   // 离线累积,上限 3 天
+  if (dt > 0 && COLONY_FX.rp > 0)
+    save.research = (save.research || 0) + COLONY_FX.rp * dt;
+  save.rpAt = now;
+}
+function techLv(id){ return (save.tech && save.tech[id]) || 0; }
+function researchTech(id){
+  const def = TRAIN_TECHS[id];
+  const lv = techLv(id);
+  if (!def || lv >= def.max) return false;
+  const cost = techCost(id, lv + 1);
+  if ((save.research || 0) < cost) return false;
+  save.research -= cost;
+  if (!save.tech) save.tech = {};
+  save.tech[id] = lv + 1;
+  pushLog(`列车研发完成:「${def.name}」LV${lv + 1}`);
+  persistSave();
+  return true;
+}

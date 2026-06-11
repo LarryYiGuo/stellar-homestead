@@ -216,10 +216,10 @@ function buildSystemScene(sysId){
   glow2.scale.setScalar(120); systemScene.add(glow2);
 
   const distUniforms = () => ({
-    uDistDir:{value: Array.from({length:5}, () => new THREE.Vector3(0,1,0))},
-    uDistCol:{value: Array.from({length:5}, () => new THREE.Vector3())},
-    uDistR:{value: new Array(5).fill(0)},
-    uDistProg:{value: new Array(5).fill(0)},
+    uDistDir:{value: Array.from({length:20}, () => new THREE.Vector3(0,1,0))},
+    uDistCol:{value: Array.from({length:20}, () => new THREE.Vector3())},
+    uDistR:{value: new Array(20).fill(0)},
+    uDistProg:{value: new Array(20).fill(0)},
   });
   const mkPlanetMat = (d) => new THREE.ShaderMaterial({
     vertexShader: PLANET_VERT, fragmentShader: PLANET_FRAG,
@@ -327,14 +327,16 @@ function updateDistrictUniforms(){
     const u = o.mat.uniforms;
     if (!u.uDistR) continue;
     const st = save.colony && save.colony[o.data.key];
-    for (let i = 0; i < 5; i++){
+    const n = st ? st.districts.length : 0;
+    const radius = n <= 6 ? 0.3 : n <= 12 ? 0.23 : 0.18;   // 区划越多,圈越小越密
+    for (let i = 0; i < 20; i++){
       const d = st && st.districts[i];
       if (d){
         const dir = districtDir(o.data, i);
         u.uDistDir.value[i].set(dir[0], dir[1], dir[2]);
         const c = DISTRICT_TYPES[d.type].col3;
         u.uDistCol.value[i].set(c[0], c[1], c[2]);
-        u.uDistR.value[i] = 0.34;
+        u.uDistR.value[i] = radius;
         u.uDistProg.value[i] = dDone(d) ? 1.0 : Math.max(0.02, Math.min(0.99, dProg(d)));
       } else {
         u.uDistR.value[i] = 0;

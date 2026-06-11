@@ -28,7 +28,8 @@ Encounter battles (turn-based, deck-building) → loot & new tactic cards
 - Each planet develops through five stages (Outpost → Settlement → Colony → Planetary City → Ecological Civilization) purely with **real time** — offline included. Habitability sets the speed.
 - **Habitable** planets grow population; **resource** planets accumulate one of five resources (rare metal, atmospheric compounds, helium-3, water ice, deuterium). Output sits in local storage until the train collects it.
 - Habitable and resource levels buff each other galaxy-wide; the Civilization Index rewards balanced development.
-- **Districts & buildings**: each developed planet automatically opens up to five functional districts (habitation / industry / arsenal / research / trade), drawn directly on the planet's surface — completed districts show a solid ring, construction sites pulse. Buildings from a 16-entry catalog queue up automatically inside districts once their conditions are met, granting production, logistics, weapon/engine discounts, loot, civ index, and (soon) train crew. The train accelerates all of it: docking in a system doubles construction speed, and you can deliver materials to finish the current project instantly.
+- **Districts & buildings**: each developed planet automatically opens functional districts (habitation / industry / arsenal / research / trade), drawn directly on the planet's surface — completed districts show a solid ring, construction sites pulse. **The environment decides everything**: district capacity splits **20 : 8 : 4** across habitable / harsh / hostile worlds (unlocked progressively with development level), and what can be zoned narrows too — hostile worlds (habitability < 35%) only support unmanned industry and research, harsh worlds (35–60%) add arsenal and trade but never habitation. In exchange, **hostile worlds run at ×3 district efficiency** (harsh ×1.5): exposed rare veins and interference-free labs make each industry or research district there the most productive in the galaxy. **Moons are natural military strongholds** — arsenal districts are heavily favored. Districts grant stacking intrinsic bonuses; buildings from a 16-entry catalog queue up automatically once conditions are met. The train accelerates all of it: docking doubles construction speed, and you can deliver materials to finish the current project instantly.
+- **Research points**: research districts and labs generate research points (×3 on hostile worlds), spent on **Train R&D** — permanent techs like composite armor (+car durability), fire-control (+weapon damage), warp tuning (+speed), logistics (-collect cooldown) and command uplink (+battle command point). Found in the train panel.
 
 ### The galaxy & the train
 
@@ -83,7 +84,8 @@ Encounter battles (turn-based, deck-building) → loot & new tactic cards
 - 每颗星球沿五个阶段发展(前哨站 → 聚居点 → 殖民地 → 行星都市 → 生态文明),只随**真实时间**推进——离线也不停。宜居度决定速度。
 - **居住型**星球增长人口;**资源型**星球累积五种资源之一(稀有金属、大气化合物、氦-3、水冰、氘),产出滞留本地仓,需列车靠站收取。
 - 居住与资源等级在全银河范围互相加成;文明指数奖励均衡发展。
-- **区划与建筑**:已开发星球会自动开辟至多五个功能区划(民生/工业/军工/科研/商贸),直接圈定在星球表面——建成显示实心环带,施工中脉冲闪烁。建筑图鉴共 16 座,条件满足后在对应区划内自动排队建造,产出涵盖产能、物流、武器/引擎折扣、战利品、文明指数与(即将开通的)列车乘员。列车是加速器:驻留本星系建设速度 ×2,亦可注资运送物资让当前工程立即完工。
+- **区划与建筑**:已开发星球自动开辟功能区划(民生/工业/军工/科研/商贸),直接圈定在星球表面——建成显示实心环带,施工中脉冲闪烁。**环境决定一切**:区划位按 **宜居 20 : 艰苦 8 : 严酷 4** 划分(随开发等级逐步解锁),类型准入也随之收窄——严酷星球(宜居度 <35%)只支持无人化的工业与科研,艰苦星球(35–60%)可加军工与商贸但绝不建民生。作为补偿,**严酷星球区划效率 ×3**(艰苦 ×1.5):裸露的稀有矿脉与无干扰的科研环境,让那里的单格工业/科研产出冠绝全银河。**卫星是天然军事要冲**——军工区权重大幅提高。区划本身带可叠加的固有加成;建筑图鉴共 16 座,条件满足后自动排队建造。列车是加速器:驻留建设速度 ×2,亦可注资运送物资让当前工程立即完工。
+- **科研值**:科研区与实验室持续产出科研值(严酷星球 ×3),用于**列车研发**——复合装甲(+车厢耐久)、火控算法(+武器伤害)、曲率精调(+航速)、物流调度(-收取冷却)、指挥链路(+战斗指挥点)等永久科技,入口在列车面板。
 
 ### 银河与列车
 

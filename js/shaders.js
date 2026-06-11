@@ -37,10 +37,10 @@ varying vec3 vNormal; varying vec3 vObjPos; varying vec3 vWorldPos;
 uniform float uTime, uSeed, uDev, uAtmoS, uBandFreq, uPolarIce, uSea, uArch;
 uniform int uType;
 uniform vec3 uC1, uC2, uC3, uAtmo, uSunPos;
-uniform vec3 uDistDir[5];
-uniform vec3 uDistCol[5];
-uniform float uDistR[5];
-uniform float uDistProg[5];
+uniform vec3 uDistDir[20];
+uniform vec3 uDistCol[20];
+uniform float uDistR[20];
+uniform float uDistProg[20];
 ${NOISE_GLSL}
 
 void main(){
@@ -126,7 +126,7 @@ void main(){
   }
 
   // ── 殖民区划:圈定在星球表面的功能分区 ──
-  for (int i = 0; i < 5; i++){
+  for (int i = 0; i < 20; i++){
     float rr = uDistR[i];
     if (rr < 0.01) continue;
     float ang = acos(clamp(dot(P, uDistDir[i]), -1.0, 1.0));

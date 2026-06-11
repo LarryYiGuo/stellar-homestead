@@ -32,6 +32,17 @@ const RESOURCES = {
   deut:  { name:'氘',         color:'#8b5cf6' },
 };
 
+/* ── 资源图标(晶体/分子/原子/冰晶/重氢,stroke 继承 color) ── */
+const RES_ICONS = {
+  metal: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3l6.5 5.2L16 20H8L5.5 8.2z"/><path d="M5.5 8.2h13M12 3l-1.5 17M12 3l1.5 17"/></svg>`,
+  chem:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7.5" cy="9" r="2.6"/><circle cx="16.5" cy="7" r="2.2"/><circle cx="13" cy="16.5" r="2.8"/><path d="M9.8 10.2l1.8 3.8M14.5 8.2l-1 5.6M9.9 8.4l4.4-1"/></svg>`,
+  he3:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="1.7" fill="currentColor" stroke="none"/><ellipse cx="12" cy="12" rx="8.5" ry="3.4"/><ellipse cx="12" cy="12" rx="8.5" ry="3.4" transform="rotate(64 12 12)"/><circle cx="19.5" cy="9.6" r="1" fill="currentColor" stroke="none"/></svg>`,
+  ice:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5l-15.6 9"/><path d="M12 3l-2 2.2M12 3l2 2.2M12 21l-2-2.2M12 21l2-2.2M4.2 7.5l3 .4M19.8 16.5l-3-.4M19.8 7.5l-3 .4M4.2 16.5l3-.4"/></svg>`,
+  deut:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="10.6" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="13.8" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="8"/><circle cx="12" cy="4" r="1.1" fill="currentColor" stroke="none"/></svg>`,
+};
+/* 科研值图标(轨道电子) */
+const RP_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><ellipse cx="12" cy="12" rx="9" ry="3.6"/><ellipse cx="12" cy="12" rx="9" ry="3.6" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="9" ry="3.6" transform="rotate(-60 12 12)"/></svg>`;
+
 function fmtNum(n){
   if (n < 1e4) return Math.round(n).toLocaleString();
   if (n < 1e8) return (n/1e4).toFixed(n<1e6?1:0) + ' 万';
@@ -474,26 +485,59 @@ const COLLECT_CD_BASE = 180;
    建筑:图鉴列表,条件满足后在对应区划内自动排队建造
    列车驻留本星系 = 商贸加速(建设 ×2);注资可立即完工
    ============================================================ */
-const DISTRICT_MAX = 5;            // 区划位上限 = 最高开发等级
+const DISTRICT_MAX = 20;           // 区划位绝对上限(宜居星球满级)
 const BUILDS_PER_DISTRICT = 2;     // 每个区划容纳建筑数
+
+/* ── 区划图标(穹顶/齿轮/盾徽/烧瓶/集装箱,stroke 继承 color) ── */
+const DIST_ICONS = {
+  habitation: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 16a7.5 7.5 0 0 1 15 0"/><path d="M3 16h18M9.5 16v-3.5h5V16"/><path d="M12 5.5V8.5M8 6.8l1 2.4M16 6.8l-1 2.4"/></svg>`,
+  industry:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 5V7.4M12 16.6V19M5 12h2.4M16.6 12H19M7 7l1.7 1.7M15.3 15.3L17 17M17 7l-1.7 1.7M8.7 15.3L7 17"/></svg>`,
+  arsenal:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 2.8v5.4c0 4.6-3.2 7.7-7 9.8-3.8-2.1-7-5.2-7-9.8V5.8z"/><path d="M12 8v5M9.5 10.5h5"/></svg>`,
+  research:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5v5.6l-5.2 9a1.8 1.8 0 0 0 1.6 2.7h11.2a1.8 1.8 0 0 0 1.6-2.7L14 9.1V3.5"/><path d="M8.5 3.5h7M8.2 14.5h7.6"/></svg>`,
+  trade:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h12.5L13.8 6.8M20 14.5H7.5l2.7 2.7"/><circle cx="19" cy="9.5" r="1" fill="currentColor" stroke="none"/><circle cx="5" cy="14.5" r="1" fill="currentColor" stroke="none"/></svg>`,
+};
 
 const DISTRICT_TYPES = {
   habitation: { name:'民生区', color:'#3ecf8e', col3:[0.24,0.81,0.56], investRes:'chem',
-    desc:'居住穹顶与生活设施,承载人口与乘员类建筑' },
+    desc:'居住穹顶与生活设施 · 区划本身:本星人口上限 +4%' },
   industry:   { name:'工业区', color:'#f59e0b', col3:[0.96,0.62,0.04], investRes:'ice',
-    desc:'采掘与精炼集群,承载产能类建筑' },
+    desc:'采掘与精炼集群 · 区划本身:本星产率 +4%' },
   arsenal:    { name:'军工区', color:'#ef4444', col3:[0.94,0.27,0.27], investRes:'he3',
-    desc:'军事工业带,承载武器与防御类建筑' },
+    desc:'军事工业带 · 区划本身:列车防御 +2' },
   research:   { name:'科研区', color:'#22d3ee', col3:[0.13,0.83,0.93], investRes:'deut',
-    desc:'实验室阵列,承载文明与引擎类建筑' },
+    desc:'实验室阵列 · 区划本身:文明指数 +0.05' },
   trade:      { name:'商贸区', color:'#8b5cf6', col3:[0.55,0.36,0.96], investRes:null,
-    desc:'星港与市场,承载物流与贸易类建筑' },
+    desc:'星港与市场 · 区划本身:列车收取量 +2%' },
 };
-// 区划自动开辟的类型倾向(按星球角色)
-const DISTRICT_PREF = {
-  hab: ['habitation','trade','research','industry','arsenal'],
-  res: ['industry','arsenal','trade','research','habitation'],
+/* 区划固有加成(建成即生效,同类可叠加,× 环境效率系数)
+   rp = 科研值产率(/秒)—— 科研值用于「列车研发」 */
+const DISTRICT_FX = {
+  habitation: { cap:0.04 },
+  industry:   { prod:0.04 },
+  arsenal:    { def:2 },
+  research:   { civ:0.05, rp:0.05 },
+  trade:      { amt:0.02 },
 };
+
+/* ── 列车研发(科研值驱动的永久科技) ── */
+const TRAIN_TECHS = {
+  armor: { name:'复合装甲', max:5, base:80,  desc:'战斗中车厢耐久 +12% / 级' },
+  fire:  { name:'火控算法', max:5, base:80,  desc:'武器伤害 +8% / 级' },
+  warp:  { name:'曲率精调', max:5, base:100, desc:'列车航速 +10% / 级' },
+  logi:  { name:'物流调度', max:5, base:60,  desc:'收取冷却 -8% / 级' },
+  cmd:   { name:'指挥链路', max:2, base:400, desc:'遭遇战指挥点 +1 / 级' },
+};
+function techCost(id, lv){ return Math.round(TRAIN_TECHS[id].base * Math.pow(2.4, lv - 1)); }
+/* 环境分级:决定星球能开辟哪些区划、能开多少、以及区划效率
+   区划位按 宜居 20 : 艰苦 8 : 严酷 4 划分(随开发等级逐步解锁);
+   严酷星球虽然格子少,但稀有矿脉裸露 + 无人干扰的科研环境,
+   区划效率 ×3 —— 单格工业/科研产出冠绝全银河
+   卫星:天然军事要冲 —— 军工权重大幅提高 */
+const ENV_TIERS = [
+  { th:0.35, name:'严酷', note:'无人化作业 · 稀有矿脉与纯净科研环境,区划效率 ×3', slots:4,  mult:3   },
+  { th:0.6,  name:'艰苦', note:'轮换驻员,不建民生 · 区划效率 ×1.5',               slots:8,  mult:1.5 },
+  { th:9,    name:'宜居', note:'全类型区划可开辟',                                  slots:20, mult:1   },
+];
 
 /* 建筑图鉴:cond = 解锁条件;fx = 效果
    fx 键:cap 本星人口上限 / prod 本星产率 / amt 收取量 / cargo 货舱
@@ -523,11 +567,11 @@ const BUILDINGS = {
     cond:{lv:4},             fx:{def:10},    desc:'列车防御 +10(全银河)' },
   /* 科研区 */
   observatory:{ name:'深空天文台',   district:'research', time:600,
-    cond:{lv:2},             fx:{civ:0.15},  desc:'文明指数 +0.15' },
+    cond:{lv:2},             fx:{civ:0.15, rp:0.05},  desc:'文明指数 +0.15 · 科研值 +0.05/s' },
   enginst:    { name:'引擎研究所',   district:'research', time:1200,
     cond:{lv:3},             fx:{ecost:0.10},desc:'引擎升级费 -10%(可叠加,下限 50%)' },
   lab:        { name:'量子实验室',   district:'research', time:1500,
-    cond:{lv:4, civ:10},     fx:{civ:0.30},  desc:'文明指数 +0.30' },
+    cond:{lv:4, civ:10},     fx:{civ:0.30, rp:0.15},  desc:'文明指数 +0.30 · 科研值 +0.15/s' },
   /* 商贸区 */
   port:       { name:'自由贸易港',   district:'trade', time:600,
     cond:{lv:2},             fx:{cd:15},     desc:'收取冷却 -15 秒(全银河)' },

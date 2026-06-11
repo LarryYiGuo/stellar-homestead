@@ -19,8 +19,8 @@ function dotColor(d){
 function openPanel(d){
   panelPlanet = d; panelSys = null;
   const roleTag = d.role === 'hab'
-    ? `<span class="role-tag hab">◆ ${d.key==='kenxi/canglan' ? '主殖民地' : '居住型'} · 容量 ${(d.capScale*100).toFixed(0)}%</span>`
-    : `<span class="role-tag res">◆ 资源型 · ${RESOURCES[d.res.key].name} ×${d.res.rich.toFixed(1)}</span>`;
+    ? `<span class="role-tag hab">${DIST_ICONS.habitation} ${d.key==='kenxi/canglan' ? '主殖民地' : '居住型'} · 容量 ${(d.capScale*100).toFixed(0)}%</span>`
+    : `<span class="role-tag res">${RES_ICONS[d.res.key]} 资源型 · ${RESOURCES[d.res.key].name} ×${d.res.rich.toFixed(1)}</span>`;
   const alias = d.alias ? `<span style="font-size:.85rem;font-weight:600;color:var(--text-dim)">(${d.alias})</span>` : '';
   $('panel-body').innerHTML = `
     <h2><span style="color:${dotColor(d)}">${iconOf(d)}</span>${d.name}${alias}</h2>
@@ -140,56 +140,68 @@ function renderDevBlock(){
   };
 }
 
-/* ── 区划与建筑列表 ── */
+/* ── 区划与建筑(紧凑图标布局,适配最多 20 区划) ── */
 function districtsHtml(p){
   const st = colonyState(p);
-  const lv = devLevel(p);
   const docked = save.train.status === 'docked' && save.train.sys === p.sysId && !save.pendingRaid;
   const rows = [];
 
-  st.districts.forEach((dd, i) => {
-    const dt = DISTRICT_TYPES[dd.type];
-    const done = dDone(dd);
-    let inner = '';
-    if (!done){
-      inner = `<div class="bld building">⚒ 开辟中 ${(dProg(dd)*100).toFixed(0)}% · 剩余 ${fmtDuration(dRemain(dd))}${docked ? ' · 🚆×2' : ''}</div>`;
-    } else {
-      for (const b of dd.builds){
-        const bd = BUILDINGS[b.id];
-        inner += dDone(b)
-          ? `<div class="bld done">✓ ${bd.name} <span class="bfx">${bd.desc}</span></div>`
-          : `<div class="bld building">⚒ ${bd.name} · ${(dProg(b)*100).toFixed(0)}% · 剩余 ${fmtDuration(dRemain(b))}${docked ? ' · 🚆×2' : ''}</div>`;
-      }
-      if (dd.builds.length < BUILDS_PER_DISTRICT){
-        const next = nextBuildingFor(p, st, dd);
-        if (next && !next.ready){
-          const unmet = next.conds.filter(c => !c.met).map(c => c.text).join(' · ');
-          inner += `<div class="bld locked">○ ${next.def.name} · 待条件:${unmet}</div>`;
-        } else if (next){
-          inner += `<div class="bld locked">○ ${next.def.name} · 排队中</div>`;
-        } else {
-          inner += `<div class="bld locked">○ 暂无可建建筑</div>`;
-        }
-      }
-    }
-    rows.push(`<div class="dist-row">
-      <div class="dist-head"><span class="dist-dot" style="background:${dt.color}"></span><b>${dt.name}</b>
-        <span class="dist-sub">${dt.desc}</span></div>
-      ${inner}</div>`);
-  });
-  for (let i = st.districts.length; i < DISTRICT_MAX; i++){
-    rows.push(`<div class="dist-row lockslot">○ 区划位 ${i+1} · ${i < lv ? '等待自动开辟' : `「${LEVELS[i+1].name}」阶段解锁`}</div>`);
+  // 环境分级:类型准入 · 槽位 20:8:4 · 效率系数
+  const env = envTier(p);
+  const envCol = env.name === '严酷' ? 'var(--red)' : env.name === '艰苦' ? 'var(--amber)' : 'var(--green)';
+  const allowed = allowedDistricts(p)
+    .map(([t]) => `<span class="dchip-ico" style="color:${DISTRICT_TYPES[t].color}">${DIST_ICONS[t]}</span>`).join('');
+  rows.push(`<div class="buff-line" style="margin:0 0 .55rem">环境 <b style="color:${envCol}">${env.name}</b>${p.moonOf ? ' · <b style="color:var(--red)">卫星要冲(军工优先)</b>' : ''} —— ${env.note}<br><span style="display:inline-flex;align-items:center;gap:.15rem">可开辟:${allowed}</span> · 区划位上限 <b style="color:${envCol}">${env.slots}</b></div>`);
+
+  // 已建成区划:按类型聚合为图标计数
+  const counts = {};
+  for (const dd of st.districts)
+    if (dDone(dd)) counts[dd.type] = (counts[dd.type] || 0) + 1;
+  const chips = Object.entries(counts).map(([t, n]) => {
+    const dt = DISTRICT_TYPES[t];
+    return `<span class="dchip" title="${dt.name} ×${n} · ${dt.desc}${env.mult > 1 ? '(×' + env.mult + ' 环境效率)' : ''}" style="--dc:${dt.color}">${DIST_ICONS[t]}<b>×${n}</b></span>`;
+  }).join('');
+  const slots = unlockedSlots(p);
+  rows.push(`<div class="dchip-row">${chips || '<span class="bld locked">尚无建成区划</span>'}</div>
+    <div class="bar-meta" style="margin-top:.35rem"><span>区划 ${st.districts.length} / ${slots} 已解锁</span><span>环境上限 ${env.slots}</span></div>`);
+
+  // 当前施工(全星球同时一项:区划或建筑)
+  const act = activeConstruction(st);
+  if (act){
+    const dt = DISTRICT_TYPES[act.type];
+    rows.push(`<div class="bld building" style="margin-top:.45rem"><span class="dchip-ico" style="color:${dt.color}">${DIST_ICONS[act.type]}</span> ⚒ ${act.label} · ${(dProg(act.obj)*100).toFixed(0)}% · 剩余 ${fmtDuration(dRemain(act.obj))}${docked ? ' · 🚆商贸加速×2' : ''}</div>`);
   }
 
+  // 建筑清单(已建成 + 下一候选)
+  const builtList = [];
+  let nextCand = null;
+  for (const dd of st.districts){
+    if (!dDone(dd)) continue;
+    for (const b of dd.builds) if (dDone(b)) builtList.push(BUILDINGS[b.id]);
+    if (!nextCand && dd.builds.length < BUILDS_PER_DISTRICT){
+      const next = nextBuildingFor(p, st, dd);
+      if (next && (!act || !next.ready)) nextCand = next;
+    }
+  }
+  if (builtList.length)
+    rows.push(`<div class="bld done" style="margin-top:.4rem">${builtList.map(b => `✓ ${b.name}`).join(' · ')}</div>`);
+  if (nextCand && !nextCand.ready){
+    const unmet = nextCand.conds.filter(c => !c.met).map(c => c.text).join(' · ');
+    rows.push(`<div class="bld locked">○ 下一建筑「${nextCand.def.name}」待条件:${unmet}</div>`);
+  }
+
+  // 科研产出展示
+  if (counts.research)
+    rows.push(`<div class="buff-line">本星科研区 ${counts.research} 座 × 环境效率 ${env.mult} —— 正在为「列车研发」积累科研值</div>`);
+
   // 注资完工(需列车驻留本星系)
-  const act = activeConstruction(st);
   let investHtml = '';
   if (act){
     const cost = investCost(p, st);
     const costTxt = Object.entries(cost).map(([k,v]) => `${RESOURCES[k].name} ${fmtNum(v)}`).join(' + ');
     investHtml = docked
       ? `<button id="invest-btn" class="act-btn cyan" style="margin-top:.6rem" ${canAfford(cost)?'':'disabled'}>注 资 完 工 · ${act.label}(${costTxt})</button>`
-      : `<div class="buff-line" style="margin-top:.5rem">⚒ 「${act.label}」施工中 —— 列车驻留本星系可商贸加速 ×2,或注资(${costTxt})立即完工</div>`;
+      : `<div class="buff-line" style="margin-top:.5rem">列车驻留本星系可商贸加速 ×2,或注资(${costTxt})立即完工</div>`;
   }
   return rows.join('') + investHtml;
 }
@@ -560,9 +572,10 @@ function afterSaveChanged(){
 
 /* ════════ 每秒主刷新 ════════ */
 function tickUI(){
-  // 殖民区划:自动开辟/建造推进 + 效果聚合 + 星球表面投影
+  // 殖民区划:自动开辟/建造推进 + 效果聚合 + 科研值积累 + 星球表面投影
   colonyTick();
   computeColonyFx();
+  accrueResearch();
   updateDistrictUniforms();
 
   // 列车抵达检查
@@ -623,6 +636,7 @@ function tickUI(){
   $('civ-index').textContent = civIndex().toFixed(2);
   $('civ-tier').textContent = '文明指数 · ' + civTier();
   $('pop-total').textContent = fmtNum(totalPop());
+  $('rp-total').textContent = fmtNum(save.research || 0);
   $('dev-count').textContent = devCountAll() + ' / ' + allPlanets().length;
   if (panelPlanet) renderDevBlock();
   if (panelSys && mode === 'galaxy' && save.train.status === 'travel') renderSysPanel();

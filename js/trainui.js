@@ -76,9 +76,26 @@ function deckChipsHtml(){
 }
 
 function treasuryHtml(){
-  return Object.entries(RESOURCES).map(([k, r]) =>
-    `<div class="res-chip"><span class="rdot" style="background:${r.color}"></span>
+  const chips = Object.entries(RESOURCES).map(([k, r]) =>
+    `<div class="res-chip"><span class="ricon" style="color:${r.color}">${RES_ICONS[k]}</span>
       <span class="rv">${fmtNum(save.treasury[k] || 0)}</span><span class="rn">${r.name}</span></div>`).join('');
+  return chips + `<div class="res-chip" title="由科研区与科研建筑积累,用于列车研发"><span class="ricon" style="color:var(--cyan)">${RP_ICON}</span>
+      <span class="rv">${fmtNum(save.research || 0)}</span><span class="rn">科研值 +${(COLONY_FX.rp || 0).toFixed(2)}/s</span></div>`;
+}
+
+/* 列车研发(科研值消费) */
+function techHtml(){
+  return Object.entries(TRAIN_TECHS).map(([id, t]) => {
+    const lv = techLv(id);
+    const maxed = lv >= t.max;
+    const cost = maxed ? 0 : techCost(id, lv + 1);
+    return `<div class="opt ${maxed ? 'locked' : ''}">
+      <div class="ol">${t.name} <span style="font-family:var(--mono);font-size:.58rem;color:${lv > 0 ? 'var(--cyan)' : 'var(--text-muted)'}">LV ${lv}/${t.max}</span>
+        <span class="od">${t.desc}</span></div>
+      <div class="cost">${maxed ? '<span class="ok">已满级</span>' : `<span class="${(save.research||0) >= cost ? 'ok' : 'no'}">科研值 ${fmtNum(cost)}</span>`}</div>
+      <button data-tech="${id}" ${!maxed && (save.research||0) >= cost ? '' : 'disabled'}>研发</button>
+    </div>`;
+  }).join('');
 }
 
 function renderTrainCard(){
@@ -126,6 +143,8 @@ function renderTrainCard(){
     <div class="sec-label">指令卡组 · ${save.deck.length} 张(遭遇战胜利可获取新指令)</div>
     <div class="treasury">${deckChipsHtml()}${COLONY_FX.crew > 0 ? `<div class="res-chip" title="由各殖民地的乘员训练营培养"><span class="rdot" style="background:var(--green)"></span><span class="rv">${COLONY_FX.crew}</span><span class="rn">乘员储备 · 车组系统筹备中</span></div>` : ''}</div>
     <button class="act-btn amber" id="t-collect" ${canCollect?'':'disabled'}>${collectLabel}</button>
+    <div class="sec-label" style="margin-top:1rem;--c:var(--cyan)">列车研发 · 消耗科研值(来自各殖民地科研区)</div>
+    <div class="opt-row" id="t-techs">${techHtml()}</div>
     <div id="t-detail">${carDetailHtml()}</div>
     <div class="tlog">
       <div class="sec-label" style="margin-top:1rem">航行日志</div>
@@ -265,6 +284,13 @@ function bindDetailActions(){
       renderTrainCard();
     } else sfx('err');
   };
+  card.querySelectorAll('[data-tech]').forEach(b => b.onclick = () => {
+    if (researchTech(b.dataset.tech)){
+      const id = b.dataset.tech;
+      showToast(`研发完成:<b>${TRAIN_TECHS[id].name}</b> LV${techLv(id)}`, {sfx:'levelup', say:'Research complete.'});
+      renderTrainCard();
+    } else sfx('err');
+  });
   const rep = card.querySelector('[data-repair]');
   if (rep) rep.onclick = () => {
     if (repairCar(selCar)){
@@ -275,11 +301,30 @@ function bindDetailActions(){
 }
 
 /* 每秒轻量刷新(不重建 DOM,避免打断点击) */
+let _techSig = '';
 function refreshTrainDynamic(){
   const st = $('t-status');
   if (st) st.innerHTML = trainStatusHtml();
   const tre = $('t-treasury');
   if (tre) tre.innerHTML = treasuryHtml();
+  // 研发按钮可用态:仅在"是否买得起"变化时重渲染,避免每秒重建打断点击
+  const techs = $('t-techs');
+  if (techs){
+    const sig = Object.keys(TRAIN_TECHS).map(id => {
+      const lv = techLv(id);
+      return lv >= TRAIN_TECHS[id].max ? 'M' : ((save.research||0) >= techCost(id, lv+1) ? '1' : '0');
+    }).join('');
+    if (sig !== _techSig){
+      _techSig = sig;
+      techs.innerHTML = techHtml();
+      techs.querySelectorAll('[data-tech]').forEach(b => b.onclick = () => {
+        if (researchTech(b.dataset.tech)){
+          showToast(`研发完成:<b>${TRAIN_TECHS[b.dataset.tech].name}</b> LV${techLv(b.dataset.tech)}`, {sfx:'levelup', say:'Research complete.'});
+          renderTrainCard();
+        } else sfx('err');
+      });
+    }
+  }
   const tr = save.train;
   const cbtn = $('t-collect');
   if (cbtn){
