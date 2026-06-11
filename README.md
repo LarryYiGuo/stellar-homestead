@@ -1,75 +1,67 @@
-# 星垦 · Stellar Homestead — 银河纪元(框架版)
+# Stellar Homestead · 星垦
 
-单星系放置养成《星垦 v12》的银河系扩展。新增**银河系总图(30 星系)**、**星际列车养成层**(原型:《Interstellar Train》,2020 HDC 最佳体验奖)与**回合制自走棋遭遇战**。
+**🎮 Play online / 在线试玩: [larryyiguo.github.io/stellar-homestead](https://larryyiguo.github.io/stellar-homestead/)**
 
-**🎮 在线试玩:[larryyiguo.github.io/stellar-homestead](https://larryyiguo.github.io/stellar-homestead/)**
+A 3D idle space-colony game with an upgradeable interstellar train and turn-based deck-building battles, built as a single-page Three.js app — no build step, nothing to install.
 
-## 运行
+一款 3D 太空殖民放置养成游戏:可扩编的星际列车 + 回合制卡组战斗。纯前端 Three.js 单页应用,无需构建。
 
-直接玩在线版,或双击 `index.html`(普通 `<script>` 加载,无需构建)。本地服务器亦可:`python3 -m http.server 8736`。
+📖 Gameplay guide / 玩法说明 → **[GAMEPLAY.md](GAMEPLAY.md)**
 
-存档:Claude 环境用 `window.storage`,本地浏览器自动回退 `localStorage`。旧版单星系存档(`stellar_homestead_v1`)首次启动自动迁移。
+---
 
-## 玩法循环(已实现)
+## English
 
-```
-殖民星球(真实时间养成)──→ 开发等级和 ↑ ──→ 列车车厢槽位 ↑
-      ↑                                            │
-      │                                            ▼
-  建立前哨(远征星系需列车驻留)            加挂货舱/武器/生活/工程舱
-      ↑                                            │
-      │                                            ▼
-列车抵达新星系 ←── 银河总图选择航线 ←── 引擎升级解锁更远星系
-      │
-      ▼
-靠站收取资源 → 金库 → 武器解锁与升级(机关炮/激光炮/导弹井)
-                         │
-                         ▼
-              航线遭遇战(火力+防御 vs 危险度)→ 缴获 / 损失
-```
+### How to run
 
-- **垦曦星系**:原 v12 八颗手作行星(主殖民地**新萨拉萨**)+ 主线《来自地球的歌》+ 支线《索拉里斯之海》,全部保留。
-- **其余 29 星系**:9 个中文名近域星系 + 20 个英文名深空星系(Halcyon → Terminus),种子化程序生成,深空星系纯以**引擎等级(LV5–LV10)**门控。
-- **武器解锁**与殖民联动:激光炮 ← 烬岩聚居点;导弹井 ← 纱幕聚居点。
-
-## 遭遇战(回合制自走棋 + 卡组构筑)
-
-高危星系抵达时概率触发(`js/battle.js`)。每回合分两段:
-
-1. **部署阶段**:从**指令卡组**抽 4 张手牌,消耗指挥点(3,有生活舱 +1)打出;敌舰意图(目标车厢 + 伤害)全部明牌,类似杀戮尖塔。全速脱离是固定指令(◆◆),不占卡组。
-2. **结算阶段**:自动交火。武器各有特性(机关炮连射×2、激光炮 25% 暴击、导弹井全体溅射);敌舰有兵种倾向——破城炮舰打**炮塔**、钻头舱打**车头引擎**、掠袭艇随机、蜂群以量取胜。
-
-**指令卡**(18 张池,常规/精锐/传奇三档):起手 6 张基础组;每次胜利可三选一入组(跳过亦可),Boss 战必给传奇。条件卡(工程支援需工程舱、全弹发射需导弹井)与车厢编组联动;传奇卡(野战重启/轨道支援/跃迁脉冲)每场限一次。
-
-**精英词缀**(危险度 ≥3 出现,5+ 双精英):装甲(穿甲可破)/ 迅捷(抢先手)/ 自爆 / 自愈 / 狙击(专打残血)/ 旗舰(光环加攻,优先击杀目标)。
-
-**Boss 编队**(首访必战,血量随列车火力动态成长,12 回合):
-- Outremer **劫掠王「锈鲸」**——每 3 回合召唤增援;
-- 衡曜 **第一站台守望者**——主炮充能一回合后齐射全列(明牌预告,留一回合上护盾/封舱);
-- Terminus **环卫者「下一班车」**——奇数回合相位护盾 -70% 受伤(数偶数回合输出)。
-
-**击伤**:车厢 HP 归零即瘫痪(炮塔哑火 / 引擎瘫痪则战败且战后半速 / 货舱破裂战利品 -40%),战后保留「受损」状态,需回列车面板花资源修复。不想打可「委托结算」(Boss 战除外)。
-
-## 文件结构
-
-| 文件 | 职责 |
+| Method | Steps |
 |---|---|
-| `js/data.js` | 全部静态数据:等级表、资源、10 星系、垦曦手作行星、程序生成器、车厢/武器/造价表、剧情文本 |
-| `js/save.js` | 存档读写 / 旧档迁移 / 剧情状态推进 |
-| `js/economy.js` | 开发等级、人口/资源、协同加成、文明指数、金库支付 |
-| `js/train.js` | 列车状态机:航行、抵达、收取、购车、武器/引擎升级、击伤修复 |
-| `js/battle.js` | 遭遇战:敌方编队生成、部署指令、自动结算、击伤持久化 |
-| `js/shaders.js` | GLSL:行星/恒星/轨迹/行星环 |
-| `js/render.js` | Three.js 双场景(银河总图 / 星系视图)、相机、拾取、标签 |
-| `js/ui.js` | 侧面板(行星/星系)、底部坞、剧情、设置、每秒主刷新 `tickUI()` |
-| `js/trainui.js` | 列车面板:编组可视化、车厢商店、武器安装升级、日志 |
-| `js/audio.js` | 生成式 BGM / 音效 / 语音 |
-| `js/main.js` | 入口与事件绑定 |
+| **Online** | Open [larryyiguo.github.io/stellar-homestead](https://larryyiguo.github.io/stellar-homestead/) |
+| **Local file** | Clone / download this repo, then double-click `index.html` (Three.js and fonts load from CDN, so an internet connection is required) |
+| **Local server** | `python3 -m http.server 8736` in the repo root, then open `http://localhost:8736` |
 
-## 预留的填充点(TODO)
+### Saves & configuration
 
-- **战斗再深化**:卡牌升级/移除(StS 式篝火)、敌方新兵种、连战事件链、Boss 复战模式。
-- **远征星系剧情**:`data.js#SYSTEMS` 每系可挂 `story` 字段;衡曜「第一站台」与 Terminus「废弃车站」是终局钩子。
-- **车厢拆改/换装**:`trainui.js` 详情区已留位(目前车厢买定离手)。
-- **资源用途扩展**:殖民侧消耗(如加速开发、星球改造)。
-- **数值平衡**:造价表 `CAR_COSTS` / `ENGINE_COSTS` / `weaponCost()`、战斗数值 `CAR_HP` / `ENEMY_TYPES` / `RAID_COMPS` 集中在 data.js,便于调参。
+- Progress is saved automatically to your browser's **localStorage** (per site — the online and local versions keep separate saves).
+- Development continues **offline**: everything is computed from real timestamps, so closing the page never pauses your colonies.
+- The **gear button** (top right) opens the system panel: save now, **export / import** (paste the JSON to move a save between devices or between local and online), and full reset.
+- The **speaker button** toggles the generative ambient BGM and voice lines.
+- Saves from the original single-system *Stellar Homestead* are migrated automatically on first load.
+
+### Development notes
+
+- Plain HTML / CSS / JS. All numbers and content live in `js/data.js`; rendering in `js/render.js`; battles in `js/battle.js`; UI in `js/ui.js` / `js/trainui.js`.
+- Local scripts are referenced with a `?v=N` cache-busting query in `index.html` — bump it whenever you edit JS/CSS.
+
+### License
+
+[MIT](LICENSE)
+
+---
+
+## 中文
+
+### 怎么打开
+
+| 方式 | 步骤 |
+|---|---|
+| **在线** | 直接打开 [larryyiguo.github.io/stellar-homestead](https://larryyiguo.github.io/stellar-homestead/) |
+| **本地文件** | 克隆/下载本仓库,双击 `index.html` 即可(Three.js 与字体走 CDN,需联网) |
+| **本地服务器** | 仓库根目录运行 `python3 -m http.server 8736`,打开 `http://localhost:8736` |
+
+### 存档与配置
+
+- 进度自动保存在浏览器 **localStorage**(按站点隔离——在线版与本地版存档互不相通)。
+- **离线也在发展**:所有数值由真实时间戳推算,关掉页面殖民地照常生长。
+- 右上角**齿轮按钮**打开系统面板:立即保存、**导出 / 导入**存档(复制 JSON 即可在设备间或本地/在线之间搬迁)、重新开始。
+- **喇叭按钮**开关生成式环境音乐与语音。
+- 原版单星系《星垦》的旧存档首次打开时自动迁移。
+
+### 开发说明
+
+- 纯 HTML / CSS / JS,无构建。数值与内容集中在 `js/data.js`;渲染 `js/render.js`;战斗 `js/battle.js`;界面 `js/ui.js` / `js/trainui.js`。
+- 本地脚本在 `index.html` 中带 `?v=N` 缓存参数——改完 JS/CSS 记得把版本号 +1。
+
+### 协议
+
+[MIT](LICENSE)
