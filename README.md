@@ -1,5 +1,8 @@
 # Stellar Homestead · 星垦·银河纪元
 
+![Stellar Homestead — Galactic Era](img/keyart.jpg)
+
+
 **🎮 Play online / 在线试玩: [larryyiguo.github.io/stellar-homestead](https://larryyiguo.github.io/stellar-homestead/)**
 
 A 3D idle space-colony game with an upgradeable interstellar train and turn-based deck-building battles, built as a single-page Three.js app — no build step, nothing to install.

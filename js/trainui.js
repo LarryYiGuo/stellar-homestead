@@ -3,6 +3,7 @@
    界面原型:《Interstellar Train》武器更换系统(Slot + Upgrade)
    ============================================================ */
 let selCar = 0;   // 选中车厢索引;-1 = 空位;-2 = 锁定位
+let _buildLv = 1;  // 建造等级选择(方案 B:可造低级省资源)
 
 /* 车厢配色:货=黄棕 / 载人=浅绿 / 战斗=红 / 通用=车头同款橙 */
 const CAR_COLORS = { engine:'var(--amber)', cargo:'#c9974a', weapon:'#e85959', habitat:'#8fe3b0', eng:'#7fc4d6', general:'#f59e0b', cryo:'#7fd6c9', lab:'#5ed0ee' };
@@ -12,7 +13,7 @@ const CCELL_ICONS = {
   cargo:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/></svg>`,
   person:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><circle cx="12" cy="9.5" r="2.4"/><path d="M7.5 18c.8-3 2.8-4.3 4.5-4.3s3.7 1.3 4.5 4.3"/></svg>`,
   weapon:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M12 7.5l5 9H7z"/></svg>`,
-  general: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M7.5 10h9M7.5 14h9"/></svg>`,
+  general: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><path d="M7.5 11h9M7.5 15h9"/><path d="M12 7.5l4-3M14.5 7.5h-5"/></svg>`,
   eng:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><circle cx="12" cy="12" r="3.4"/><path d="M12 6.5v2M12 15.5v2M6.5 12h2M15.5 12h2"/></svg>`,
   cryo:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>`,
   lab:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3.5" y="3.5" width="17" height="17" rx="2"/><ellipse cx="12" cy="12" rx="5.5" ry="2.4"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/></svg>`,
@@ -96,8 +97,8 @@ function trainStatusHtml(){
   const where = localTransit()
     ? `轨道转移中 → <span>${(planetsOf(tr.sys).find(x=>x.id===tr.localTo)||{}).name || ''}</span> · ${Math.ceil(Math.max(0,(tr.localArriveAt-Date.now())/1000))}s`
     : `泊于 <span class="ok">${dp ? dp.name : '?'}</span> 轨道`;
-  const crew = crewOk() ? `<span class="ok">乘员 ${crewTeams()}/${crewNeeded()} 组</span>` : `<span style="color:var(--red)">乘员不足 ${crewTeams()}/${crewNeeded()} 组 —— 无法启程</span>`;
-  return `驻留 <span class="ok">${sysById(tr.sys).name}</span> 星系 · ${where} · 随车移民 <span>${fmtNum(tr.pax)}</span>/${fmtNum(paxCapacity())} · ${crew}<br>本地仓内待收取 <span>${fmtNum(info.avail)}</span> · 弹药 <span>${tr.ammo}/${ammoMax()}</span>${anchorHasArsenal() ? ' <span class="ok">(军事区补给中)</span>' : ''}`;
+  const crew = `<span class="ok">乘员 ${crewTeams()} 组(全车维护)</span>`;
+  return `驻留 <span class="ok">${sysById(tr.sys).name}</span> 星系 · ${where} · 随车移民 <span>${fmtNum(tr.pax)}</span>/${fmtNum(paxCapacity())} · ${crew}<br>本地仓内待收取 <span>${fmtNum(info.avail)}</span> · 弹药 <span>${tr.ammo}/${ammoMax()}</span>${tr.ammo < ammoMax() ? '<span class="ammo-dot" title="弹药不满 —— 停靠军事区锚地补充"></span>' : ''}${anchorHasArsenal() ? ' <span class="ok">(军事区补给中)</span>' : ''}`;
 }
 
 function deckChipsHtml(){
@@ -123,6 +124,24 @@ function treasuryHtml(){
       <span class="rv">${fmtNum(save.influence || 0)}</span><span class="rn">影响力</span></div>`;
 }
 
+/* ── 船官:在岗 3 槽 + 名册(点击上岗/卸任) ── */
+function officersHtml(){
+  const of = save.officers || { owned: [], active: [] };
+  if (!of.owned.length) return '';
+  const av = id => `<img src="img/off_${id}.jpg" onerror="this.style.display='none'" style="width:24px;height:32px;object-fit:cover;border-radius:4px;vertical-align:-10px;margin-right:.4rem">`;
+  const slot = id => {
+    const o = OFFICERS[id];
+    return `<button data-offdown="${id}" class="close-btn" style="color:var(--green);border-color:rgba(62,207,142,.5);display:inline-flex;align-items:center" title="${o.desc} —— 点击卸任">${av(id)}${o.nick}${o.name} · ${o.role}</button>`;
+  };
+  const bench = of.owned.filter(id => !of.active.includes(id)).map(id => {
+    const o = OFFICERS[id];
+    const full = of.active.length >= OFFICER_SLOTS;
+    return `<button data-offup="${id}" class="close-btn" ${full ? 'disabled' : ''} style="opacity:${full ? .5 : .85};display:inline-flex;align-items:center" title="${o.desc}${full ? ' —— 在岗已满,先卸任一人' : ' —— 点击上岗'}">${av(id)}${o.nick}${o.name} · ${o.role}</button>`;
+  }).join('');
+  return `<div class="divider"></div><div class="sec-label" style="--c:var(--green)">船官 · 在岗 ${of.active.length}/${OFFICER_SLOTS}</div>
+    <div style="display:flex;gap:.35rem;flex-wrap:wrap">${of.active.map(slot).join('') || '<span class="bld locked" style="border:none;padding:0">无人在岗 —— 从名册点击上岗</span>'}</div>
+    ${bench ? `<div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem;border-top:1px dashed rgba(255,255,255,.08);padding-top:.4rem">${bench}</div>` : ''}`;
+}
 /* 列车研发(科研值立项 → 工期 → 影响力可加速) */
 function techHtml(){
   const q = save.techQueue;
@@ -168,11 +187,11 @@ function renderTrainCard(){
   let strip = '';
   cars.forEach((c, i) => {
     const def = CAR_TYPES[c.type];
-    const wlv = (c.type === 'weapon' || c.type === 'general') && c.wid && !c.paxMode ? `<div class="wlv">LV${c.wlv}</div>` : '';
-    const pax = c.paxMode ? `<div class="wlv" style="color:#7fd6c9;border-color:rgba(127,214,201,.4)">载人</div>` : '';
+    const lvb = `<div class="wlv">LV${c.type === 'engine' ? tr.engineLv : (c.clv || 1)}</div>`;   // 所有车厢常驻等级角标
+    const pax = c.paxMode ? `<div class="wlv pax-b" style="color:#7fd6c9;border-color:rgba(127,214,201,.4)">载人</div>` : '';
     const dmg = c.damaged ? `<div class="dmg-badge">⚠ 受损</div>` : '';
     strip += `<div class="car ${selCar===i?'sel':''} ${c.damaged?'damaged':''}" data-i="${i}" style="color:${CAR_COLORS[c.type]}">
-      ${wlv}${pax}${dmg}${carSvg(c.type, c)}<div class="car-name">${c.type==='engine' ? def.name+' LV'+tr.engineLv : (c.type==='weapon'&&c.wid&&!c.paxMode ? WEAPONS[c.wid].name : def.name)+((c.clv||1)>1?' LV'+c.clv:'')}</div></div>`;
+      ${lvb}${pax}${dmg}${carSvg(c.type, c)}<div class="car-name">${c.type==='engine' ? def.name : (c.type==='weapon'&&c.wid&&!c.paxMode ? WEAPONS[c.wid].name : def.name)}</div></div>`;
   });
   for (let i = cars.length; i < slots; i++)
     strip += `<div class="car empty ${selCar===-1?'sel':''}" data-i="-1" style="color:var(--text-muted)">
@@ -200,8 +219,8 @@ function renderTrainCard(){
       <div class="tstat"><div class="k">航速</div><div class="v sp">${trainSpeed().toFixed(1)} /分</div></div>
       <div class="tstat"><div class="k">防御</div><div class="v df">${defense()}</div></div>
       <div class="tstat"><div class="k">载客</div><div class="v" style="color:#7fd6c9">${fmtNum(tr.pax)}/${fmtNum(paxCapacity())}</div></div>
-      <div class="tstat"><div class="k">弹药</div><div class="v" style="color:${tr.ammo>0?'var(--text)':'var(--red)'}">${tr.ammo}/${ammoMax()}</div></div>
-      <div class="tstat"><div class="k">乘员组</div><div class="v" style="color:${crewOk()?'var(--green)':'var(--red)'}">${crewTeams()}/${crewNeeded()}</div></div>
+      <div class="tstat"><div class="k">弹药${tr.ammo < ammoMax() ? '<span class="ammo-dot" title="弹药不满 —— 停靠军事区锚地补充"></span>' : ''}</div><div class="v" style="color:${tr.ammo>0?'var(--text)':'var(--red)'}">${tr.ammo}/${ammoMax()}</div></div>
+      <div class="tstat"><div class="k">乘员组</div><div class="v" style="color:var(--green)">${crewTeams()}</div></div>
     </div>
     <div style="display:flex;gap:.5rem;margin:.1rem 0 .7rem;flex-wrap:wrap">
       <button class="close-btn" id="t-tagtoggle">地图列车标牌:${save.ui.tag ? '开' : '关'}</button>
@@ -217,6 +236,7 @@ function renderTrainCard(){
     ${save.upgrade ? `<div class="sec-label" style="margin-top:.8rem;--c:var(--amber)">升级工坊</div><div class="opt-row" id="t-upgrade">${upgradeRowHtml()}</div>` : ''}
     ${depotHtml()}
     <div id="t-detail">${carDetailHtml()}</div>
+    ${officersHtml()}
     <div class="tlog">
       <div class="sec-label" style="margin-top:1rem">航行日志</div>
       ${save.log.slice(0,6).map(l => `<div class="log-line"><b>${new Date(l.t).toLocaleTimeString('zh-CN',{hour12:false})}</b> ${l.txt}</div>`).join('') || '<div class="log-line">尚无记录 —— 列车整备完毕,等待第一次远航。</div>'}
@@ -245,27 +265,57 @@ function renderTrainCard(){
 
 /* 车厢升级选项(全类型 5 级,+30%/级) */
 function carUpOptHtml(car){
-  const clv = car.clv || 1;
-  if (clv >= CAR_MAXLV) return `<div class="opt locked"><div class="ol">车厢已满级 LV${clv}<span class="od">效果 ×${carEffOf(clv).toFixed(1)}</span></div></div>`;
-  const cost = carUpCost(car.type, clv + 1);
-  return `<div class="opt"><div class="ol">车厢升级 → LV${clv + 1}<span class="od">效果 ×${carEffOf(clv).toFixed(1)} → ×${carEffOf(clv + 1).toFixed(1)} · 工期 ${fmtDuration(carTime(clv + 1))}</span></div>
-    <div class="cost">${costHtml(cost)}</div>
-    <button data-carup="1" ${canAfford(cost) && !save.upgrade ? '' : 'disabled'}>升级</button></div>`;
+  const lv = carTechLv(car.type);
+  if (lv >= CAR_MAXLV) return `<div class="opt locked"><div class="ol">改装方案已满级 LV${lv}<span class="od">全列 ${CAR_TYPES[car.type].name} 效果 ×${carEffOf(lv).toFixed(1)}</span></div></div>`;
+  const cost = carTechCost(lv + 1);
+  const n = trainCars().filter(x => x.type === car.type).length;
+  return `<div class="opt"><div class="ol">研发改装方案 → LV${lv + 1}<span class="od">消耗科研值,完成后全列 ${n} 节同型车厢自动升级 · 效果 ×${carEffOf(lv).toFixed(1)} → ×${carEffOf(lv + 1).toFixed(1)} · 研发 ${fmtDuration(carTechTime(lv + 1))}(走研发槽)</span></div>
+    <div class="cost"><span class="${(save.research||0) >= cost ? 'ok' : 'no'}">科研值 ${fmtNum(cost)}</span></div>
+    <button data-carresearch="${car.type}" ${(save.research||0) >= cost && !save.techQueue ? '' : 'disabled'}>研发</button></div>`;
 }
-/* 车厢替换(仅有工业区划的类地行星,旧车入库) */
+/* 车厢替换:只能与车厢库现成车厢交换;没建造的先建造入库 */
 function replaceOptHtml(car){
   const p = refitPlanet();
-  if (!p) return `<div class="bld locked" style="margin-top:.45rem">○ 车厢替换:需停靠「有工业区划的类地行星」(旧车厢将存入该星车厢库)</div>`;
+  if (!p) return `<div class="bld locked" style="margin-top:.45rem">○ 车厢替换/建造:需停靠「有工业区划的类地行星」</div>`;
   const cost = refitCost(carCount());
   const costTxt = Object.entries(cost).map(([k, v]) => RESOURCES[k].name + ' ' + fmtNum(v)).join(' + ');
-  const opts = ['cargo','weapon','general','cryo','habitat','eng','lab'].filter(t => t !== car.type).map(t =>
-    `<button data-replace="${t}" ${canAfford(cost) && !save.upgrade ? '' : 'disabled'} title="${CAR_TYPES[t].desc}">${CAR_TYPES[t].name}</button>`).join('');
-  return `<div class="opt"><div class="ol">替换车厢 —— 旧车存入 <b>${p.name}</b> 车厢库<span class="od">费用 ${costTxt}</span>
-    <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.45rem">${opts}</div></div></div>`;
+  const list = (save.depot && save.depot[p.key]) || [];
+  const stock = list.map((c, i) =>
+    `<button data-replace="${i}" ${canAfford(cost) && !save.upgrade ? '' : 'disabled'} title="${CAR_TYPES[c.type].desc}">${CAR_TYPES[c.type].name} LV${c.clv || 1}${c.wid ? '·' + WEAPONS[c.wid].name : ''}</button>`).join('');
+  const lvChips = [1,2,3,4,5].map(l =>
+    `<button data-buildlv="${l}" class="close-btn" style="padding:.25rem .6rem;${_buildLv === l ? 'color:var(--cyan);border-color:rgba(34,211,238,.55)' : ''}">LV${l}</button>`).join('');
+  const buildBtns = ['cargo','general','weapon','lab','eng','habitat','cryo'].map(t => {
+    const lock = !carUnlocked(t);
+    const techLv = carTechLv(t);
+    const lv = Math.min(_buildLv, techLv);
+    const bc = carBuildCost(t, lv);
+    const bcTxt = Object.entries(bc).map(([k, v]) => RESOURCES[k].name + ' ' + fmtNum(v)).join('+');
+    return `<button data-build="${t}" ${!lock && canAfford(bc) && !save.upgrade ? '' : 'disabled'}
+      title="${lock ? '引擎 LV' + CAR_UNLOCK[t] + ' 解锁' : '建造 LV' + lv + (lv < _buildLv ? '(方案上限 LV' + techLv + ')' : '') + ' · ' + bcTxt + ' · 工期 ' + fmtDuration(carBuildTime(lv))}">${lock ? '🔒' : '⚒'} ${CAR_TYPES[t].name} LV${lv}</button>`;
+  }).join('');
+  return `<div class="opt"><div class="ol">替换车厢 —— 与 <b>${p.name}</b> 车厢库现货交换<span class="od">作业费 ${costTxt};没建造的车厢需先建造入库(下方 ⚒)</span>
+    <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.45rem">${stock || '<span class="bld locked">库内无现货</span>'}</div>
+    <div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.5rem;align-items:center"><span class="eco-sub" style="margin:0">建造等级</span>${lvChips}</div>
+    <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.4rem;opacity:.85">${buildBtns}</div></div></div>`;
+}
+/* 武器库:具名武器(战利品)列表,战斗车厢详情页装备 */
+function armoryHtml(){
+  if (!save.armory || !save.armory.length) return '';
+  const items = save.armory.map((uid, i) => {
+    const uw = UNIQUE_WEAPONS[uid];
+    if (!uw) return '';
+    return `<div class="opt"><div class="ol" style="color:var(--amber)">★ ${uw.name}<span class="od">${WEAPONS[uw.base].name}基座 · 火力 ×${uw.mult} · 来源:${uw.src} —— ${uw.desc}</span></div>
+      <button data-equip="${i}">装备</button></div>`;
+  }).join('');
+  return `<div class="opt locked" style="border:none;padding:.2rem 0"><div class="ol">武器库(具名战利品 ${save.armory.length} 件)</div></div>` + items;
 }
 function carDetailHtml(){
-  const core = carDetailCore();
+  let core = carDetailCore();
   const car = save.train.cars[selCar];
+  // 车厢图鉴头图(7 类,引擎暂无)
+  if (selCar >= 0 && car && CAR_TYPES[car.type])
+    core = core.replace('<div class="car-detail">',
+      '<div class="car-detail">' + artBanner(car.type === 'engine' ? 'img/engine_loco.jpg' : 'img/car_' + car.type + '.jpg', CAR_TYPES[car.type].name + (CAR_TYPES[car.type].en ? ' · ' + CAR_TYPES[car.type].en : ''), 88));
   if (selCar < 0 || !car || car.type === 'engine' || car.damaged) return core;
   const extras = `<div class="opt-row" style="margin-top:.55rem">${carUpOptHtml(car)}${replaceOptHtml(car)}</div>`;
   return core.replace(/<\/div>\s*$/, extras + '</div>');
@@ -280,12 +330,13 @@ function carDetailCore(){
   if (selCar === -1){
     const cost = nextCarCost();
     if (!cost) return `<div class="car-detail"><h4>加挂车厢</h4><div class="cd-desc">编组已达框架上限。</div></div>`;
-    const opts = ['cargo','weapon','general','cryo','habitat','eng','lab'].map(t => {
+    const opts = ['cargo','general','weapon','lab','eng','habitat','cryo'].map(t => {
       const def = CAR_TYPES[t];
-      return `<div class="opt">
-        <div class="ol">${def.name}<span class="od">${def.desc}</span></div>
-        <div class="cost">${costHtml(cost)}</div>
-        <button data-buy="${t}" ${canAfford(cost)?'':'disabled'}>加挂</button>
+      const lock = !carUnlocked(t);
+      return `<div class="opt ${lock ? 'locked' : ''}">
+        <div class="ol">${def.name}${lock ? ` <span style="color:var(--text-muted)">🔒 引擎 LV${CAR_UNLOCK[t]} 解锁</span>` : ''}<span class="od">${def.desc}</span></div>
+        <div class="cost">${lock ? '' : costHtml(cost)}</div>
+        <button data-buy="${t}" ${!lock && canAfford(cost) ? '' : 'disabled'}>加挂</button>
       </div>`;
     }).join('');
     return `<div class="car-detail"><h4>加挂第 ${carCount()+1} 节车厢<span class="sub">NEW CAR</span></h4>
@@ -334,8 +385,8 @@ function carDetailCore(){
       <div class="cd-desc">${def.desc}</div><div class="opt-row">${opt}${ropt}</div></div>`;
   }
 
-  // 载人模式切换(货舱 500 / 武器平台 100;改装后原功能离线)
-  const paxToggle = (car.type === 'cargo' || car.type === 'weapon')
+  // 载人模式切换(仅运输车厢:载货 ⇄ 载人 1000;载人时不运货)
+  const paxToggle = (car.type === 'cargo')
     ? `<div class="opt"><div class="ol">${car.paxMode ? '恢复原始用途' : `改装为载人模式(${CAR_TYPES[car.type].pax} 人)`}
         <span class="od">${car.paxMode ? '拆除座席,恢复' + (car.type==='cargo'?'货运':'武器') + '功能' : '加装维生座席 —— 改装后' + (car.type==='cargo'?'无法运货':'武器离线') + '(原舱本为弹药与货物设计)'}</span></div>
         <button data-paxmode="1">${car.paxMode ? '恢复' : '改装'}</button></div>`
@@ -353,7 +404,7 @@ function carDetailCore(){
       wopt = `<div class="opt locked"><div class="ol">集成机关炮 · 火力 ${Math.round(WEAPONS.autogun.fp * carEffOf(car.clv))}<span class="od">火力随车厢等级成长(LV${car.clv || 1}),不可换装其他武器</span></div></div>`;
     }
     return `<div class="car-detail"><h4>${def.name}${car.wid ? ' · 机关炮 LV'+car.wlv : ''}<span class="sub">${def.en}</span></h4>
-      <div class="cd-desc">${def.desc}<br><b style="color:var(--text-dim)">当前:</b>载客 ${CAR_TYPES.general.pax} · 兼运货物 ${fmtNum(Math.round(CAR_TYPES.cargo.cap*0.25*Math.pow(2.5,tr.engineLv-1)))} · ${car.wid?'武装':'未武装'}</div>
+      <div class="cd-desc">${def.desc}<br><b style="color:var(--text-dim)">当前:</b>兼运货物 ${fmtNum(Math.round(CAR_TYPES.cargo.cap*0.25*Math.pow(2.5,tr.engineLv-1)))} · ${car.wid?'武装':'未武装'}</div>
       <div class="opt-row">${wopt}</div></div>`;
   }
   if (car.type === 'cryo'){
@@ -368,7 +419,7 @@ function carDetailCore(){
   if (car.type === 'weapon'){
     if (car.paxMode){
       return `<div class="car-detail"><h4>${def.name} · 载人改装<span class="sub">${def.en}</span></h4>
-        <div class="cd-desc">武器离线,座席容纳 ${CAR_TYPES.weapon.pax} 人。</div>
+        <div class="cd-desc">载人模式运行中。</div>
         <div class="opt-row">${paxToggle}</div></div>`;
     }
     if (!car.wid){
@@ -383,7 +434,7 @@ function carDetailCore(){
         </div>`;
       }).join('');
       return `<div class="car-detail"><h4>${def.name} · 空载<span class="sub">${def.en}</span></h4>
-        <div class="cd-desc">${def.desc}</div><div class="opt-row">${opts}${paxToggle}</div></div>`;
+        <div class="cd-desc">${def.desc}</div><div class="opt-row">${opts}${armoryHtml()}${paxToggle}</div></div>`;
     }
     const w = WEAPONS[car.wid];
     let opt;
@@ -396,14 +447,21 @@ function carDetailCore(){
         <button data-wup="1" ${canAfford(cost)&&!save.upgrade?'':'disabled'}>升级</button>
       </div>`;
     }
-    return `<div class="car-detail"><h4>${w.name} · LV${car.wlv}<span class="sub">${w.en} · 火力 ${Math.round(w.fp*car.wlv*carEffOf(car.clv))}</span></h4>
-      <div class="cd-desc">${w.desc}</div><div class="opt-row">${opt}${paxToggle}</div></div>`;
+    const um = car.uw && UNIQUE_WEAPONS[car.uw] ? UNIQUE_WEAPONS[car.uw].mult : 1;
+    const fpNow = Math.round(w.fp * car.wlv * carEffOf(car.clv) * um);
+    const uHead = car.uw ? `<div class="buff-line" style="color:var(--amber)">★ ${UNIQUE_WEAPONS[car.uw].name} —— 火力 ×${um}(${UNIQUE_WEAPONS[car.uw].desc})
+      <button data-unequip="1" class="close-btn" style="margin-left:.5rem;padding:.2rem .6rem">拆下入库</button></div>` : '';
+    return `<div class="car-detail"><h4>${car.uw ? UNIQUE_WEAPONS[car.uw].name : w.name} · LV${car.wlv}<span class="sub">${w.en} · 火力 ${fpNow}</span></h4>
+      ${uHead}
+      <div class="cd-desc">${w.desc}</div><div class="opt-row">${opt}${armoryHtml()}${paxToggle}</div></div>`;
   }
 
   // cargo / habitat / eng
   const effect = car.type==='cargo'
     ? (car.paxMode ? `载人改装中:容纳 ${CAR_TYPES.cargo.pax} 人,货运离线` : `装载容量 +${CAR_TYPES.cargo.cap}(随引擎 ×2.5/级)`)
     : car.type==='habitat' ? `收取冷却 -${CAR_TYPES.habitat.cdRed}s · 防御 +${CAR_TYPES.habitat.def}`
+    : car.type==='cryo' ? '文明火种 ×1:在无人星系建立首块殖民地时整舱消耗(1000 名深眠拓荒者)'
+    : car.type==='lab' ? `科研产率 +${CAR_TYPES.lab.rp}/s(随车厢等级 +30%/级)`
     : `靠站收取量 +${CAR_TYPES.eng.collectBuff*100}%`;
   return `<div class="car-detail"><h4>${def.name}${car.paxMode ? ' · 载人改装' : ''}<span class="sub">${def.en}</span></h4>
     <div class="cd-desc">${def.desc}<br><b style="color:var(--text-dim)">当前效果:</b>${effect}</div>
@@ -419,6 +477,32 @@ function bindDetailActions(){
       renderTrainCard();
     } else sfx('err');
   });
+  card.querySelectorAll('[data-offup]').forEach(b => b.onclick = () => {
+    const of = save.officers;
+    if (of.active.length < OFFICER_SLOTS && !of.active.includes(b.dataset.offup)){
+      of.active.push(b.dataset.offup);
+      const o = OFFICERS[b.dataset.offup];
+      showToast(`👤 <b>${o.nick}${o.name}</b> 上岗 —— ${o.desc.split(' —— ')[0]}`, {sfx:'confirm', say:'Officer on duty.'});
+      persistSave(); renderTrainCard();
+    } else sfx('err');
+  });
+  card.querySelectorAll('[data-offdown]').forEach(b => b.onclick = () => {
+    const of = save.officers;
+    of.active = of.active.filter(x => x !== b.dataset.offdown);
+    persistSave(); sfx('blip'); renderTrainCard();
+  });
+  card.querySelectorAll('[data-equip]').forEach(b => b.onclick = () => {
+    const uid = save.armory[+b.dataset.equip];
+    if (equipUnique(selCar, uid)){
+      showToast(`★ <b>${UNIQUE_WEAPONS[uid].name}</b> 已装备 —— 火力 ×${UNIQUE_WEAPONS[uid].mult}`, {sfx:'unlock', say:'Unique armament mounted.'});
+      renderTrainCard();
+    } else sfx('err');
+  });
+  const ue = card.querySelector('[data-unequip]');
+  if (ue) ue.onclick = () => {
+    if (unequipUnique(selCar)){ showToast('具名武器已拆下入库,普通炮架保留', {sfx:'blip'}); renderTrainCard(); }
+    else sfx('err');
+  };
   card.querySelectorAll('[data-install]').forEach(b => b.onclick = () => {
     if (installWeapon(selCar, b.dataset.install)){
       showToast(`武器平台装备 <b>${WEAPONS[b.dataset.install].name}</b>`, {sfx:'confirm', say:'Weapon online.'});
@@ -441,16 +525,26 @@ function bindDetailActions(){
     } else sfx('err');
   };
   bindTechActions(card);
-  const cu = card.querySelector('[data-carup]');
+  const cu = card.querySelector('[data-carresearch]');
   if (cu) cu.onclick = () => {
-    if (upgradeCar(selCar)){
-      showToast(`<b>${CAR_TYPES[save.train.cars[selCar].type].name}</b> 改装开工 → LV${save.upgrade.to}`, {sfx:'confirm', say:'Refit started.'});
+    const type = cu.dataset.carresearch;
+    if (startCarResearch(type)){
+      showToast(`改装方案研发立项:<b>${CAR_TYPES[type].name}</b> LV${save.techQueue.to} —— 完成后全列同型自动升级`, {sfx:'confirm', say:'Refit research started.'});
       renderTrainCard();
     } else sfx('err');
   };
+  card.querySelectorAll('[data-buildlv]').forEach(b => b.onclick = () => { _buildLv = +b.dataset.buildlv; sfx('blip'); renderTrainCard(); });
+  card.querySelectorAll('[data-build]').forEach(b => b.onclick = () => {
+    const type = b.dataset.build;
+    const lv = Math.min(_buildLv, carTechLv(type));
+    if (buildToDepot(type, lv)){
+      showToast(`<b>${CAR_TYPES[type].name}</b> LV${lv} 开始建造 —— 完工后存入车厢库`, {sfx:'confirm', say:'Car construction started.'});
+      renderTrainCard();
+    } else sfx('err');
+  });
   card.querySelectorAll('[data-replace]').forEach(b => b.onclick = () => {
     const old = CAR_TYPES[save.train.cars[selCar].type].name;
-    if (replaceCar(selCar, b.dataset.replace)){
+    if (replaceCar(selCar, +b.dataset.replace)){
       showToast(`「${old}」已入库,换装 <b>${CAR_TYPES[b.dataset.replace].name}</b>`, {sfx:'confirm', say:'Car exchanged.'});
       renderTrainCard();
     } else sfx('err');

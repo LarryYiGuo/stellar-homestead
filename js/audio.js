@@ -375,7 +375,45 @@ function scheduleSparkle(){
   }, (mn + Math.random() * (mx - mn)) * 1000);
 }
 
+/* ── 推进器:启动 / 运行(持续低鸣)/ 停止 ── */
+let _thr = null;
+function thrusterTick(active){
+  if (!MUSIC.wantOn || !('AudioContext' in window || 'webkitAudioContext' in window)) return;
+  if (active && !_thr){
+    buildAudio();
+    const ctx = MUSIC.ctx;
+    if (!ctx || ctx.state !== 'running' || !MUSIC.noiseBuf) return;
+    const t = ctx.currentTime;
+    // 启动音:滤波噪声上扫 + 低频推背
+    sfx('thrustStart');
+    // 运行环:循环噪声(低通)+ 次声正弦,缓入
+    const src = ctx.createBufferSource(); src.buffer = MUSIC.noiseBuf; src.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 240; f.Q.value = 0.8;
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.045, t + 1.4);
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 52;
+    const og = ctx.createGain(); og.gain.setValueAtTime(0, t); og.gain.linearRampToValueAtTime(0.03, t + 1.4);
+    src.connect(f); f.connect(g); g.connect(MUSIC.sfxBus);
+    o.connect(og); og.connect(MUSIC.sfxBus);
+    src.start(t); o.start(t);
+    _thr = { src, o, g, og };
+  } else if (!active && _thr){
+    const ctx = MUSIC.ctx, t = ctx.currentTime;
+    _thr.g.gain.setTargetAtTime(0, t, 0.5);
+    _thr.og.gain.setTargetAtTime(0, t, 0.5);
+    const th = _thr; _thr = null;
+    setTimeout(() => { try{ th.src.stop(); th.o.stop(); }catch(e){} }, 2200);
+    sfx('thrustStop');
+  }
+}
+
 /* ── 交互音效(纯合成) ── */
+let _lastShipSfx = 0;
+function shipPortSfx(kind){              // 贸易船入港/出港(节流,避免多船刷屏)
+  const now = Date.now();
+  if (now - _lastShipSfx < 1500) return;
+  _lastShipSfx = now;
+  sfx(kind);
+}
 function sfx(name){
   if (!MUSIC.wantOn) return;
   buildAudio();
@@ -392,7 +430,34 @@ function sfx(name){
     o.connect(g); g.connect(MUSIC.sfxBus);
     o.start(t0); o.stop(t0+dur+0.05);
   };
+  const noise = (t0, dur, vol, type='lowpass', freq=800, glide) => {
+    if (!MUSIC.noiseBuf) return;
+    const src = ctx.createBufferSource(); src.buffer = MUSIC.noiseBuf; src.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(freq, t0); f.Q.value = 1;
+    if (glide) f.frequency.exponentialRampToValueAtTime(glide, t0 + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    src.connect(f); f.connect(g); g.connect(MUSIC.sfxBus);
+    src.start(t0); src.stop(t0 + dur + 0.05);
+  };
   switch(name){
+    // ── 推进器 ──
+    case 'thrustStart': noise(t, 0.9, 0.16, 'lowpass', 180, 1400); tone(46, t, 0.7, 0.14, 'sine', 60); break;
+    case 'engage':  tone(180, t, 0.9, 0.1, 'sawtooth', 420); noise(t+0.1, 0.8, 0.07, 'bandpass', 500, 2200); tone(880, t+0.55, 0.3, 0.07); break;
+    case 'thrustStop':  noise(t, 1.1, 0.13, 'lowpass', 1200, 140); tone(58, t, 0.9, 0.1, 'sine', 38); break;
+    // ── 贸易船进出港 ──
+    case 'dock':   tone(660, t, 0.1, 0.06); tone(440, t+0.11, 0.16, 0.06); tone(95, t+0.06, 0.14, 0.07); break;
+    case 'undock': tone(440, t, 0.1, 0.05); tone(660, t+0.1, 0.14, 0.05); noise(t, 0.35, 0.04, 'bandpass', 900, 2200); break;
+    // ── 战斗 ──
+    case 'fire':    noise(t, 0.09, 0.1, 'bandpass', 1800); noise(t+0.11, 0.09, 0.09, 'bandpass', 1700); break;
+    case 'laser':   tone(1500, t, 0.26, 0.09, 'sawtooth', 280); break;
+    case 'missile': noise(t, 0.5, 0.1, 'bandpass', 600, 2600); tone(120, t, 0.4, 0.07, 'triangle', 320); break;
+    case 'hit':     noise(t, 0.12, 0.1, 'bandpass', 700); tone(170, t, 0.12, 0.09, 'triangle', 90); break;
+    case 'hitcar':  noise(t, 0.14, 0.11, 'lowpass', 500); tone(110, t, 0.16, 0.1, 'triangle', 60); break;
+    case 'explode': noise(t, 0.65, 0.18, 'lowpass', 1400, 120); tone(90, t, 0.5, 0.14, 'sine', 36); break;
+    case 'bigexplode': noise(t, 1.3, 0.24, 'lowpass', 1800, 80); tone(70, t, 0.9, 0.18, 'sine', 28); noise(t+0.15, 0.8, 0.1, 'bandpass', 300, 90); break;
     case 'blip':    tone(740, t, 0.1, 0.16, 'sine', 980); break;
     case 'open':    tone(330, t, 0.16, 0.1, 'triangle', 520); tone(660, t+0.05, 0.14, 0.07); break;
     case 'confirm': tone(523, t, 0.16, 0.14); tone(784, t+0.07, 0.22, 0.13); break;
@@ -415,7 +480,8 @@ function pickVoice(){
       const hit = vs.find(v => v.name.includes(key));
       if (hit){ cachedVoice = hit; return hit; }
     }
-    cachedVoice = vs[0] || null;
+    // 音色列表可能尚未加载完:绝不缓存任意英文音色当替补(会永久锁错音色),
+    // 本次静默,下次调用重试,保证全程只用首选 EVE Aura 式音色
   }catch(e){}
   return cachedVoice;
 }
@@ -423,14 +489,16 @@ if ('speechSynthesis' in window) speechSynthesis.onvoiceschanged = () => { cache
 function speak(text){
   if (!MUSIC.wantOn || !('speechSynthesis' in window)) return;
   try{
+    const v = pickVoice();
+    if (!v) return;                        // 锁定唯一音色:首选英文音色未就绪时宁可不出声
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    const v = pickVoice();
-    if (v) u.voice = v;
+    u.voice = v;
     u.rate = 0.96; u.pitch = 0.8; u.volume = 0.8;
     speechSynthesis.speak(u);
   }catch(e){}
 }
+/* 全游戏统一一种语音:EVE Aura 式英文播报(见 pickVoice 首选序);未命中音色则静默 */
 
 function bgmToggle(){
   MUSIC.wantOn = !MUSIC.wantOn;

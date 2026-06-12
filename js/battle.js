@@ -46,16 +46,54 @@ function openBattle(sysId, pirate){
         atk: Math.round(t.atk * rg.atkS) || 1,
         affix: null, intent: null, stunned: false, negated: false };
     });
+  } else if (pirate === 'intercept'){
+    // 突击航线拦截:海盗截击小队(轻型,不推进战役)
+    const comp = Math.random() < 0.5 ? ['raider','raider'] : ['raider','swarmer','swarmer'];
+    enemies = comp.map((tid, i) => mkEnemy(tid, i, rg));
   } else if (pirate){
-    // 小行星带海盗基地:固定火力平台 + 危险度编队护卫
-    const bhp = Math.round(260 * rg.hpS + firepower() * 2);
-    enemies = [{
-      tid:'pbase', icon:'☠', prefer:'weapon', isBase:true,
-      name:'海盗基地 · 火力平台',
-      hp: bhp, maxHp: bhp,
-      atk: Math.round(16 * rg.atkS),
-      affix: null, intent: null, stunned: false, negated: false,
-    }, ...RAID_COMPS[h].slice(0, 3).map((tid, i) => mkEnemy(tid, i, rg))];
+    // 海盗巢穴战役:剥洋葱(层数随危险度 3-5 层;进度持久化,期间可返航补给)
+    const campaign = pirateCampaign(sys);
+    const phase = Math.min(piratePhaseOf(sysId), campaign.length - 1);
+    const pkey = campaign[phase].key;
+    if (pkey === 'sweep'){          // 外围清扫:大编队轻型舰
+      const comp = h >= 4 ? ['raider','raider','raider','swarmer','swarmer','swarmer']
+                          : ['raider','raider','swarmer','swarmer','raider'];
+      enemies = comp.map((tid, i) => mkEnemy(tid, i, rg));
+    } else if (pkey === 'siege'){   // 压制阵地:防御炮台 ×2 + 重型舰
+      const mkTower = i => {
+        const thp = Math.round(150 * rg.hpS + firepower() * 0.8);
+        return { tid:'ptower', icon:'⛭', prefer:'weapon', name:'防御炮台-' + String.fromCharCode(65 + i),
+          hp: thp, maxHp: thp, atk: Math.round(20 * rg.atkS),
+          affix: null, intent: null, stunned: false, negated: false };
+      };
+      enemies = [mkTower(0), mkTower(1), ...['breaker','breaker','driller'].map((tid, i) => mkEnemy(tid, i, rg))];
+    } else if (pkey === 'elite'){   // 精锐拦截:词缀强化舰队
+      enemies = ['breaker','driller','raider','raider'].map((tid, i) => mkEnemy(tid, i, rg));
+      const keys = Object.keys(AFFIXES);
+      for (const e of enemies.slice(0, 2)){
+        e.affix = keys[Math.floor(Math.random() * keys.length)];
+        e.hp = Math.round(e.hp * 1.4); e.maxHp = e.hp;
+        e.name = '★' + e.name;
+      }
+    } else if (pkey === 'warlord'){ // 督军旗舰:小 Boss + 护卫
+      const whp = Math.round(320 * rg.hpS + firepower() * 1.6);
+      enemies = [{
+        tid:'warlord', icon:'♛', prefer:'weapon',
+        name:'海盗督军 ·「割喉」旗舰',
+        hp: whp, maxHp: whp,
+        atk: Math.round(28 * rg.atkS),
+        affix: 'command', intent: null, stunned: false, negated: false,
+      }, ...['raider','raider'].map((tid, i) => mkEnemy(tid, i, rg))];
+    } else {                        // 巢穴核心:基地本体(最硬)+ 精英护卫
+      const bhp = Math.round(420 * rg.hpS + firepower() * 2.5);
+      enemies = [{
+        tid:'pbase', icon:'☠', prefer:'weapon', isBase:true,
+        name:'海盗基地 · 核心平台',
+        hp: bhp, maxHp: bhp,
+        atk: Math.round(22 * rg.atkS),
+        affix: null, intent: null, stunned: false, negated: false,
+      }, ...RAID_COMPS[Math.min(5, h + 1)].slice(0, 3).map((tid, i) => mkEnemy(tid, i, rg))];
+    }
   } else if (isBoss){
     boss = BOSSES[sysId];
     const bhp = Math.round(boss.hpBase * rg.hpS * 0.7 + firepower() * 3);
@@ -84,14 +122,14 @@ function openBattle(sysId, pirate){
   const cars = save.train.cars.map((c, idx) => {
     const mh = Math.round((CAR_HP[c.type] || 80) * hpS);
     return {
-      idx, type: c.type, wid: c.wid || null, wlv: c.wlv || 0, clv: c.clv || 1,
+      idx, type: c.type, wid: c.wid || null, wlv: c.wlv || 0, clv: c.clv || 1, uw: c.uw || null,
       paxMode: !!c.paxMode,
       maxHp: mh, hp: c.damaged ? 0 : mh,
       down: !!c.damaged, immune: false,
     };
   });
   B = {
-    sys, boss, pirate: !!pirate, tutorial: tutorial || 0, region: rg, round: 1, maxRounds: isBoss ? 12 : BATTLE_MAX_ROUNDS,
+    sys, boss, pirate: !!pirate, intercept: pirate === 'intercept', tutorial: tutorial || 0, region: rg, round: 1, maxRounds: isBoss ? 12 : BATTLE_MAX_ROUNDS,
     phase: 'plan', enemies, cars,
     value: enemies.reduce((s, e) => s + e.maxHp + e.atk * 4, 0),
     drawPile: shuffle(save.deck.slice()), discardPile: [], hand: [], exhausted: [],
@@ -101,7 +139,8 @@ function openBattle(sysId, pirate){
   if (isBoss) blog(boss.intro);
   blog(isBoss ? `⚠ 旗舰级目标:${boss.name} —— ${boss.skillText}`
     : tutorial ? `一群脱轨陨星切入沧澜轨道 —— ${enemies.length} 个目标,武器系统这就有了用武之地。击毁后残骸归我们。`
-    : pirate ? `逼近 ${sys.name} 小行星带深处的海盗巢穴 —— 基地火力平台与 ${enemies.length - 1} 艘护卫上线`
+    : pirate === 'intercept' ? `突击航线遭遇拦截 —— ${enemies.length} 艘海盗截击艇咬住航迹`
+    : pirate ? (() => { const c = pirateCampaign(sys), i = Math.min(piratePhaseOf(sysId), c.length - 1); return `${c[i].name}(${i + 1}/${c.length})—— ${c[i].intro}`; })()
     : `遭遇 ${sys.name} 空域的袭击者舰队 —— ${enemies.length} 个目标进入射程`);
   newPlanPhase(true);
   drawIntents();
@@ -110,7 +149,8 @@ function openBattle(sysId, pirate){
   renderBattle();
   sfx('err'); speak(isBoss ? 'Capital-class hostile detected.'
     : tutorial ? 'Debris field ahead. Weapons hot.'
-    : pirate ? 'Pirate stronghold in range. Weapons free.'
+    : pirate === 'intercept' ? 'Interceptors inbound.'
+    : pirate ? pirateCampaign(sys)[Math.min(piratePhaseOf(sysId), pirateCampaign(sys).length - 1)].say
     : 'Hostiles detected. Battle stations.');
   tickBlueprintLayer();
 }
@@ -143,6 +183,7 @@ function drawCards(n){
 function aliveEnemies(){ return B.enemies.filter(e => e.hp > 0); }
 function aliveCars(){ return B.cars.filter(c => !c.down); }
 function carLabel(c){
+  if (c.type === 'weapon' && c.uw && UNIQUE_WEAPONS[c.uw]) return UNIQUE_WEAPONS[c.uw].name;
   return c.type === 'weapon' && c.wid ? WEAPONS[c.wid].name : CAR_TYPES[c.type].name;
 }
 function worstCar(){
@@ -290,8 +331,11 @@ function hitEnemy(e, dmg, tag){
   if (e.isBoss && B.boss.skill === 'phase' && B.round % 2 === 1) mult *= 0.3;
   dmg = Math.max(1, Math.round(dmg * mult));
   e.hp = Math.max(0, e.hp - dmg);
+  e._hitAt = Date.now();
+  sfx('hit');
   blog(`${tag} ${e.name} -${dmg}${mult < 1 ? '(减伤)' : ''}`);
   if (e.hp <= 0){
+    sfx(e.isBoss || e.isBase ? 'bigexplode' : 'explode');
     blog(`☄ ${e.name} 被击毁`);
     if (e.affix === 'volatile'){
       const t = aliveCars()[Math.floor(Math.random() * aliveCars().length)];
@@ -307,12 +351,15 @@ function hitEnemy(e, dmg, tag){
 function hitCar(c, dmg, srcName){
   if (c.immune){ blog(`「${carLabel(c)}」封舱完好,挡下 ${srcName} 的攻击`); return; }
   c.hp = Math.max(0, c.hp - dmg);
+  c._hitAt = Date.now();
+  sfx('hitcar');
   blog(`${srcName} 轰击「${carLabel(c)}」 -${dmg}`);
   checkCarDown(c);
 }
 function checkCarDown(c){
   if (c.hp <= 0 && !c.down){
     c.down = true;
+    sfx('explode');
     const eff = c.type === 'engine' ? '列车动力中断!'
       : c.type === 'weapon' ? '火力点哑火'
       : c.type === 'cargo' ? '货舱破裂,战利品散逸'
@@ -356,10 +403,13 @@ function weaponFireStep(car){
     if (car.down || !battleCarArmed(car) || !aliveEnemies().length) return;
     const w = WEAPONS[car.wid];
     const mode = WEAPON_BATTLE[car.wid].mode;
-    let base = w.fp * car.wlv * carEffOf(car.clv);   // 车厢等级提升火力
-    // 弹药:有弹 -1 发;打空后应急弹药,伤害减半
-    if (save.train.ammo > 0) save.train.ammo--;
-    else { base *= 0.5; blog(`「${carLabel(car)}」弹药耗尽 —— 应急弹药,威力减半`); }
+    sfx(mode === 'beam' ? 'laser' : car.wid === 'missile' ? 'missile' : 'fire');
+    const ofx = officerFx();
+    let base = w.fp * car.wlv * carEffOf(car.clv) * (car.uw && UNIQUE_WEAPONS[car.uw] ? UNIQUE_WEAPONS[car.uw].mult : 1) * (1 + ofx.dmg);   // 车厢等级/具名武器/炮术长
+    // 弹药:按武器威力分级消耗(机关炮 1 / 双联 2 / 激光 3 / 导弹 4);不足则应急弹药,伤害减半
+    const need = AMMO_COST[car.wid] || 1;
+    if (save.train.ammo >= need) save.train.ammo -= need;
+    else { save.train.ammo = 0; base *= 0.5; blog(`「${carLabel(car)}」弹药耗尽 —— 应急弹药,威力减半`); }
     const target = () => {
       const foc = B.fx.focusIdx !== null ? B.enemies[B.fx.focusIdx] : null;
       if (foc && foc.hp > 0) return foc;
@@ -369,6 +419,8 @@ function weaponFireStep(car){
     for (let v = 0; v < volleys; v++){
       if (!aliveEnemies().length) break;
       let mult = (1 + B.fx.dmgMult) * (1 + 0.08 * techLv('fire'));   // 研发:火控算法
+      const tgt0 = target();
+      if (tgt0 && (tgt0.isBase || tgt0.isBoss || tgt0.tid === 'warlord')) mult *= (1 + ofx.siege);   // 攻坚专家
       const foc = B.fx.focusIdx !== null ? B.enemies[B.fx.focusIdx] : null;
       const critP = (car.wid === 'laser' ? 0.25 : 0) + B.fx.critP;
       const roll = () => Math.random() < critP ? 1.6 : 1;
@@ -445,14 +497,17 @@ function startRound(){
     B.phase = 'plan';
     renderBattle();
   });
-  runSteps(steps, 0);
+  blog('—— 交战开始 ——');
+  renderBattle();
+  sfx('engage');
+  setTimeout(() => runSteps(steps, 0), 1000);   // 确认后 1 秒蓄势,再逐步交火
 }
 function runSteps(steps, i){
-  if (i >= steps.length) return;
+  if (!B || i >= steps.length) return;
   steps[i]();
   if (B && B.phase === 'anim'){
     renderBattle();
-    setTimeout(() => runSteps(steps, i + 1), 360);
+    setTimeout(() => runSteps(steps, i + 1), 500);
   }
 }
 
@@ -506,7 +561,7 @@ function finishBattle(result){
   if (result === 'victory' || result === 'withdraw' || result === 'escape'){
     let mult = result === 'victory' ? 1 : result === 'withdraw' ? 0.5 : 0.7;
     mult *= (B.autoMult || 1) * (cargoDown ? 0.6 : 1) * (isBoss ? B.boss.lootMult : 1);
-    const total = Math.round(B.value * 3 * sys.rich * mult * (B.region ? B.region.loot : 1) * COLONY_FX.loot);
+    const total = Math.round(B.value * 3 * sys.rich * mult * (B.region ? B.region.loot : 1) * COLONY_FX.loot * (1 + officerFx().loot));
     const mainKey = (sys.bias && sys.bias !== 'hab') ? sys.bias : 'metal';
     const keys = Object.keys(RESOURCES).filter(k => k !== mainKey);
     const sideKey = keys[Math.floor(Math.random() * keys.length)];
@@ -546,11 +601,71 @@ function finishBattle(result){
     save.research = (save.research || 0) + lt.rp;
     summary += `;残骸回收:稀有金属 +${fmtNum(lt.metal)} · 化合物 +${fmtNum(lt.chem)} · 科研值 +${fmtNum(lt.rp)}`;
   }
-  if (B.pirate && result === 'victory'){                    // 基地被毁:10-30 分钟后易地重建
-    const delay = Math.round(PIRATE_RESPAWN_MIN + Math.random() * (PIRATE_RESPAWN_MAX - PIRATE_RESPAWN_MIN));
-    save.pirates[sys.id] = Date.now() + delay * 1000;
-    addInfluence(INF_FX.victory);                           // 清剿巢穴双倍武威
-    summary += `;基地化为残骸,残党将在 ${fmtDuration(delay)} 后于带内重建`;
+  if (B.pirate && !B.intercept && result === 'victory'){
+    const campaign = pirateCampaign(sys);
+    const phase = Math.min(piratePhaseOf(sys.id), campaign.length - 1);
+    if (phase < campaign.length - 1){                       // 阶段推进:警戒圈不会重组,可返航补给再来
+      if (!save.pirateOps) save.pirateOps = {};
+      save.pirateOps[sys.id] = { phase: phase + 1 };
+      summary += `;${campaign[phase].name}完成 —— 巢穴防线剥落一层(${phase + 1}/${campaign.length})。弹药不足可先返航补给,缺口不会重新合拢`;
+    } else {                                                // 核心摧毁:战利品散落为残骸场(1 小时回收期),之后才重建
+      const rgLoot = B.region ? (B.region.loot || 1) : 1;
+      const mainKey = (sys.bias && sys.bias !== 'hab') ? sys.bias : 'metal';
+      const layerMult = campaign.length / 3;               // 层数越多,残骸越富
+      const pool = {
+        metal: Math.round(1500 * rgLoot * sys.rich * layerMult),
+        chem:  Math.round(500 * rgLoot * sys.rich * layerMult),
+      };
+      pool[mainKey] = (pool[mainKey] || 0) + Math.round(800 * rgLoot * sys.rich * layerMult);
+      save.pirateWreck[sys.id] = { pool, until: Date.now() + PIRATE_WRECK_SEC * 1000 };
+      const delay = Math.round(PIRATE_RESPAWN_MIN + Math.random() * (PIRATE_RESPAWN_MAX - PIRATE_RESPAWN_MIN));
+      save.pirates[sys.id] = Date.now() + PIRATE_WRECK_SEC * 1000 + delay * 1000;   // 残骸期结束后才重建
+      if (save.pirateOps) delete save.pirateOps[sys.id];
+      addInfluence(INF_FX.victory);
+      const poolTxt = Object.entries(pool).map(([k, v]) => `${RESOURCES[k].name} ${fmtNum(v)}`).join(' · ');
+      summary += `;基地核心化为残骸场 —— 散落物资 ${poolTxt},<b>1 小时</b>内可多次往返回收(点击残骸标记,每趟受货舱容量限制)`;
+    }
+  }
+  // 随机招募:战斗胜利 8% 从随机池补入未拥有船官
+  if (result === 'victory' && Math.random() < 0.08){
+    const pool = OFFICER_RANDOM_POOL.filter(id => !save.officers.owned.includes(id));
+    if (pool.length) unlockOfficer(pool[Math.floor(Math.random() * pool.length)], '战场上捞回来的');
+  }
+  // 具名武器掉落:督军必掉(未拥有优先)/ 巢穴核心 35% / Boss 首杀专属
+  if (result === 'victory'){
+    const owned = () => new Set([...save.armory, ...save.train.cars.map(c => c.uw).filter(Boolean)]);
+    const dropUnique = uid => {
+      save.armory.push(uid);
+      const uw = UNIQUE_WEAPONS[uid];
+      summary += `;<b style="color:var(--amber)">缴获具名武器:${uw.name}</b>(${WEAPONS[uw.base].name}基座 · 火力 ×${uw.mult})—— 已存入武器库,战斗车厢详情页可装备`;
+      setTimeout(() => showToast(`🏆 缴获具名武器:<b>${uw.name}</b> —— 武器库可装备`, { sfx:'unlock', say:'Unique armament recovered.' }), 1800);
+    };
+    const rollWarlordPool = () => {
+      const have = owned();
+      const pool = WARLORD_POOL.filter(id => !have.has(id));
+      return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+    };
+    if (B.pirate && !B.intercept){
+      const campW = pirateCampaign(sys);
+      const phW = Math.min(piratePhaseOf(sys.id), campW.length - 1);
+      // 注意:此时 phase 已被上方分支推进;用本场的 key 判断
+      const fought = campW[Math.max(0, (save.pirateOps && save.pirateOps[sys.id] ? save.pirateOps[sys.id].phase : campW.length) - 1)] || campW[campW.length - 1];
+      if (fought.key === 'warlord'){
+        const uid = rollWarlordPool();
+        if (uid) dropUnique(uid); else summary += ';督军的武器你已尽数缴获 —— 旗舰残骸折算为额外物资';
+      } else if (fought.key === 'core' && Math.random() < 0.35){
+        const uid = rollWarlordPool();
+        if (uid) dropUnique(uid);
+      }
+    }
+    if (isBoss && BOSS_WEAPON[sys.id] && !owned().has(BOSS_WEAPON[sys.id]) && !save.bossKills[sys.id]){
+      dropUnique(BOSS_WEAPON[sys.id]);
+    }
+  }
+  // 拦截战:胜利继续突击;脱离/战败 → 突击中止返航
+  if (B.intercept){
+    if (result === 'victory') summary += ';截击艇被击退 —— 突击航线继续';
+    else { if (save.pirateRun) delete save.pirateRun[sys.id]; summary += ';突击中止,列车返回锚地'; }
   }
   if (isBoss && result === 'victory'){
     save.bossKills[sys.id] = true;
@@ -610,7 +725,7 @@ function renderBattle(){
       e.charging ? '<span class="emark">☢充能</span>' : '',
     ].join('');
     const focused = B.fx.focusIdx === i;
-    return `<div class="efoe ${dead ? 'dead' : ''} ${e.isBoss ? 'boss' : ''} ${B.targeting !== null && !dead ? 'targetable' : ''} ${focused ? 'focused' : ''}" data-e="${i}">
+    return `<div class="efoe ${dead ? 'dead' : ''} ${!dead && Date.now() - (e._hitAt || 0) < 500 ? 'hitflash' : ''} ${e.isBoss ? 'boss' : ''} ${B.targeting !== null && !dead ? 'targetable' : ''} ${focused ? 'focused' : ''}" data-e="${i}">
       <div class="ehead"><span class="eicon">${e.icon}</span>${e.name}${afx}${focused ? ' 🎯' : ''}</div>
       <div class="hpbar"><div class="hpfill foe" style="width:${e.hp / e.maxHp * 100}%"></div></div>
       <div class="emeta">${dead ? '已击毁' : `HP ${e.hp}/${e.maxHp} · 火力 ${e.atk}`} ${marks}</div>
@@ -618,7 +733,7 @@ function renderBattle(){
   }).join('');
 
   const carsHtml = B.cars.map(c => `
-    <div class="bcar ${c.down ? 'down' : ''}">
+    <div class="bcar ${Date.now() - (c._hitAt || 0) < 500 ? "hitflash" : ""} ${c.down ? 'down' : ''}">
       <div class="bcar-name">${CAR_TYPES[c.type].name}${c.wid ? ' · ' + WEAPONS[c.wid].name + ' LV' + c.wlv : ''}${c.immune ? ' 🛡' : ''}</div>
       <div class="hpbar"><div class="hpfill ${c.hp / c.maxHp < 0.35 ? 'low' : ''}" style="width:${c.hp / c.maxHp * 100}%"></div></div>
       <div class="bcar-hp">${c.down ? '⚠ 瘫痪' : c.hp + '/' + c.maxHp}</div>
@@ -661,8 +776,25 @@ function renderBattle(){
     bottom = `<div class="bfoot"><div class="cpline">交战中…</div></div>`;
   }
 
+  // 战斗横幅:Boss 肖像 > 海盗基地 > 编队最高威胁敌型;新手陨石战无横幅
+  const BOSS_ART = { outremer:'boss_rustwhale', hengyao:'boss_watcher', terminus:'boss_ringwarden' };
+  let bArt = null, bCap = '';
+  if (B.boss && BOSS_ART[B.sys.id]){ bArt = BOSS_ART[B.sys.id]; bCap = B.enemies[0].name; }
+  else if (B.pirate && !B.intercept && B.enemies.some(e => e.tid === 'warlord')){ bArt = 'warlord'; bCap = '海盗督军 ·「割喉」旗舰'; }
+  else if (B.pirate && !B.intercept && B.enemies.some(e => e.tid === 'ptower')){ bArt = 'ptower'; bCap = '压制阵地 · 防御炮台'; }
+  else if (B.pirate){ bArt = 'pirate_base'; bCap = '海盗巢穴 · PIRATE STRONGHOLD'; }
+  else if (!B.tutorial){
+    for (const tid of ['breaker','driller','raider','swarmer'])
+      if (B.enemies.some(e => e.tid === tid)){ bArt = 'enemy_' + tid; bCap = ENEMY_TYPES[tid].name + ' 级敌舰'; break; }
+  }
+  // 战场环境背景:碎石带(新手/海盗带)/ 海盗巢穴 / 深空
+  const bbg = B.pirate ? 'bbg_lair' : B.tutorial ? 'bbg_belt' : 'bbg_space';
+  card.style.backgroundImage = `linear-gradient(rgba(10,12,18,.93), rgba(10,12,18,.97)), url('img/${bbg}.jpg')`;
+  card.style.backgroundSize = 'cover';
+  card.style.backgroundPosition = 'center';
   card.innerHTML = `
     <h3>${B.boss ? 'BOSS 战' : '遭遇战'} · ${B.sys.name}<span class="en">ROUND ${B.round} / ${B.maxRounds}</span></h3>
+    ${bArt ? artBanner('img/' + bArt + '.jpg', bCap, 84) : ''}
     ${B.boss ? `<div class="boss-skill">⚠ ${B.boss.skillText}</div>` : ''}
     <div class="sec-label" style="margin-top:.8rem">敌方编队</div>
     <div class="efoes">${enemiesHtml}</div>
@@ -691,4 +823,57 @@ function renderBattle(){
     B = null;
     if ($('train-overlay').classList.contains('show')) renderTrainCard();
   };
+}
+
+
+/* ════ 突击航线:飞向海盗基地,途中 0-2 次拦截(越近概率越大),抵达开战 ════ */
+function startPirateRun(sysId){
+  if (!save.pirateRun) save.pirateRun = {};
+  const dur = PIRATE_RUN_SEC[0] + Math.random() * (PIRATE_RUN_SEC[1] - PIRATE_RUN_SEC[0]);
+  const hits = PIRATE_INTERCEPTS.filter(ev => Math.random() < ev.p).map(ev => ev.at);
+  save.pirateRun[sysId] = { t0: Date.now(), dur, hits, hit: 0 };
+  showToast(`列车驶离锚地,突入小行星带 —— 航时约 ${Math.round(dur)} 秒${hits.length ? ',雷达显示带内有海盗活动' : ''}`, { sfx:'thrustStart', say:'Assault run initiated.' });
+  persistSave();
+}
+function pirateRunProgress(run){ return Math.min(1, (Date.now() - run.t0) / (run.dur * 1000)); }
+function pirateRunTick(){               // 每秒:拦截判定 → 抵达开战;战斗中暂停推进
+  if (!save.pirateRun) return;
+  for (const sysId in save.pirateRun){
+    const run = save.pirateRun[sysId];
+    if (battleOpen()){ run.t0 += 1000; continue; }          // 战斗中航程冻结
+    if (!pirateAlive(sysId) || save.train.sys !== sysId || save.train.status !== 'docked'){
+      delete save.pirateRun[sysId]; continue;               // 基地没了/列车离开 → 突击取消
+    }
+    const prog = pirateRunProgress(run);
+    if (run.hit < run.hits.length && prog >= run.hits[run.hit]){
+      run.hit++;
+      openBattle(sysId, 'intercept');
+      continue;
+    }
+    if (prog >= 1){
+      delete save.pirateRun[sysId];
+      openBattle(sysId, true);
+    }
+  }
+}
+/* 残骸回收:每趟受货舱容量限制,1 小时窗口内可多次往返 */
+function salvageWreck(sysId){
+  const w = pirateWreckOf(sysId);
+  if (!w) return false;
+  let room = cargoCap();
+  const got = {};
+  for (const k of resPrioKeys(w.pool)){
+    if (w.pool[k] <= 0 || room <= 0) continue;
+    const take = Math.min(w.pool[k], room);
+    w.pool[k] -= take; room -= take;
+    save.treasury[k] = (save.treasury[k] || 0) + take;
+    got[k] = take;
+  }
+  if (!Object.keys(got).length) return false;
+  const txt = Object.entries(got).map(([k, v]) => `${RESOURCES[k].name} +${fmtNum(Math.round(v))}`).join(' · ');
+  const leftTotal = Math.round(Object.values(w.pool).reduce((s, v) => s + v, 0));
+  showToast(`残骸回收:${txt}${leftTotal > 0 ? ` —— 场内还剩约 ${fmtNum(leftTotal)},回收期 ${fmtDuration(Math.max(0, (w.until - Date.now()) / 1000))}` : ' —— 残骸场已清空'}`, { sfx:'confirm', say:'Salvage secured.' });
+  if (leftTotal <= 0) delete save.pirateWreck[sysId];
+  persistSave();
+  return true;
 }

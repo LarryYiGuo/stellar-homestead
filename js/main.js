@@ -51,6 +51,10 @@ async function init(){
   refreshDock();
   tickUI();
   setInterval(tickUI, 1000);
+  const ra = document.getElementById('raid-alert');
+  if (ra) ra.onclick = () => {
+    if (save.pendingRaid){ save.pendingRaid.openAt = 0; battleAutoOpened = false; tickUI(); }
+  };
   animate();
   addEventListener('resize', () => {
     camera.aspect = innerWidth/innerHeight;

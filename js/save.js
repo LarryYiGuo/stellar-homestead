@@ -37,16 +37,18 @@ function freshSave(){
     train: {
       sys:'kenxi', status:'docked', from:null, to:null, departAt:0, arriveAt:0,
       planet:'canglan', localTo:null, localArriveAt:0,
-      engineLv: 1, rpLv: 0, pax:0, ammo:12,
+      engineLv: 1, rpLv: 0, pax:0, ammo:30,
       cars: [ {type:'engine', clv:1}, {type:'cargo', clv:1}, {type:'general', clv:1, wid:'autogun', wlv:1} ],
     },
     mig: {}, popExtra: {}, terraformed: {}, depot: {},
     influence: 0, techQueue: null, upgrade: null,
     routes: {}, ui: { tag: true, routes: false },
-    homePort: 'kenxi/canglan', starport: {}, lines: [], pstore: {}, boost: {},
+    homePort: 'kenxi/canglan', starport: {}, lines: [], pstore: {}, boostRun: {},
     infFrac: 0, portStory: { idx: 0 },
     log: [],
     deck: BASE_DECK.slice(),
+    armory: [],            // 具名武器库(战利品)
+    officers: { owned: [], active: [] },   // 船官:已入列 / 在岗(≤3)
     bossKills: {},
     colony: {},
     research: 0, tech: {},
@@ -70,7 +72,19 @@ function normalizeSave(){
   if (!save.ui) save.ui = { tag: true, routes: false };
   if (!save.depot) save.depot = {};
   if (!save.homePort) save.homePort = 'kenxi/canglan';
-  for (const k of ['starport','pstore','boost']) if (!save[k]) save[k] = {};
+  for (const k of ['starport','pstore','boostRun','boostAuto','hints','pirateOps','pirateWreck']) if (!save[k]) save[k] = {};
+  if (!Array.isArray(save.armory)) save.armory = [];
+  if (!save.officers) save.officers = { owned: [], active: [] };
+  save.officers.active = (save.officers.active || []).slice(0, OFFICER_SLOTS);
+  for (const k in save.treasury) if (!isFinite(save.treasury[k])) save.treasury[k] = 0;   // 清洗历史 NaN 污染
+  if (!isFinite(save.research)) save.research = 0;
+  delete save.boost;   // 旧定时加速制废弃 → 投入制 boostRun
+  if (save.gates) for (const sid in save.gates){
+    const g = save.gates[sid];
+    if (g.collect === undefined) g.collect = 1;
+    if (g.deliver === undefined) g.deliver = 0;
+    if (g.target === undefined) g.target = null;
+  }
   if (!save.lines) save.lines = [];
   if (typeof save.infFrac !== 'number') save.infFrac = 0;
   if (!save.portStory) save.portStory = { idx: 0 };
@@ -79,6 +93,11 @@ function normalizeSave(){
   if (!save.tutRaids) save.tutRaids = {};
   if (!save.questAnn) save.questAnn = {};
   if (!save.autoShip) save.autoShip = {};
+  if (!save.cryoGifts) save.cryoGifts = {};
+  if (!save.gates) save.gates = {};
+  if (!save.gateUnlocked) save.gateUnlocked = 0;
+  if (!save.docks) save.docks = {};
+  if (save.boarding === undefined) save.boarding = null;
   // 开发节奏重标(旧档迁移):等比拉伸 est,保持现有等级与进度不变
   if (save.devScale !== 2){
     const S = 5184000 / 38880;
@@ -89,16 +108,25 @@ function normalizeSave(){
   if (typeof save.train.rpLv !== 'number') save.train.rpLv = 0;
   for (const c of save.train.cars){
     if (!c.clv) c.clv = 1;
+    if (c.paxMode && c.type !== 'cargo') delete c.paxMode;   // 新规:仅运输车厢可改装
     if (c.type === 'general' && c.wid) c.wlv = c.clv;            // 通用集成机炮随车厢等级
     if (c.type === 'weapon' && c.wid === 'autogun') c.wid = 'twin';  // 旧档:战斗车厢机关炮 → 双联
   }
   if (save.techQueue === undefined) save.techQueue = null;
+  // 车厢科技迁移(方案 B):类型等级 = 现役/库存该类型最高 clv,然后全部拉平
+  if (!save.carTech){
+    save.carTech = {};
+    const scan = c => { if (c.type !== 'engine') save.carTech[c.type] = Math.max(save.carTech[c.type] || 1, c.clv || 1); };
+    (save.train.cars || []).forEach(scan);
+    if (save.depot) for (const key in save.depot) save.depot[key].forEach(scan);
+    for (const type in save.carTech) if (typeof applyCarTech === 'function') applyCarTech(type, save.carTech[type]);
+  }
   if (save.upgrade === undefined) save.upgrade = null;
   // 列车新字段(旧档迁移)
   const tr = save.train;
   if (!tr.planet) tr.planet = tr.sys === 'kenxi' ? 'canglan' : (planetsOf(tr.sys)[0] || {}).id;
   if (typeof tr.pax !== 'number') tr.pax = 0;
-  if (typeof tr.ammo !== 'number') tr.ammo = 12;
+  if (typeof tr.ammo !== 'number') tr.ammo = 30;
   if (tr.localTo === undefined){ tr.localTo = null; tr.localArriveAt = 0; }
   if (!Array.isArray(save.deck) || !save.deck.length) save.deck = BASE_DECK.slice();
   save.deck = save.deck.filter(id => CARDS[id]);   // 剔除已废弃的卡 id
@@ -108,7 +136,7 @@ function normalizeSave(){
   if (!save.train.engineLv) save.train.engineLv = 1;
   // 主殖民地:沧澜开局即「殖民地」(LV3),约 1.5 万人,自带 居住/商贸/科研 三个初始区划
   if (!save.est['kenxi/canglan']){
-    save.est['kenxi/canglan'] = Date.now() - LEVELS[3].th * 1000;
+    save.est['kenxi/canglan'] = Date.now() - LEVELS[4].th * 1000;   // 开局即「殖民地」1.5 万人
     if (!save.colony) save.colony = {};
     save.colony['kenxi/canglan'] = { districts: [
       { type:'habitation', startAt: Date.now() - 9e6, dur: 1, builds: [], ann: 1 },

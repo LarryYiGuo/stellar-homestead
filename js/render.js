@@ -261,6 +261,7 @@ function curTrainSys(){ return save.train.status === 'travel' ? '' : save.train.
    星系视图(按星系数据构建,可重建)
    ============================================================ */
 let beltObj = null, pirateBase = null;
+let trainTrailG = null, trainTrailS = null;   // 列车尾迹(银河 / 星系)
 function buildSystemScene(sysId){
   if (systemScene) disposeScene(systemScene);
   planetObjs.length = 0; moonsList.length = 0; ringMats.length = 0;
@@ -318,7 +319,9 @@ function buildSystemScene(sysId){
       const mesh = new THREE.Mesh(new THREE.SphereGeometry(d.radius, 48, 48), mat);
       mesh.userData.planetKey = d.key;
       systemScene.add(mesh);
-      moonsList.push({ mesh, hostId: d.moonOf, dist: d.mdist, speed: d.mspeed, angle: Math.random()*6.28, incl: 0.12, mat });
+      const mt = mkMoonTrail(d.mdist);
+      systemScene.add(mt.line);
+      moonsList.push({ mesh, hostId: d.moonOf, dist: d.mdist, speed: d.mspeed, angle: Math.random()*6.28, incl: 0.12, mat, ring: mt.line, ringMat: mt.mat });
       planetObjs.push({ data:d, mesh, mat, isMoon:true, angle0:0 });
       continue;
     }
@@ -369,8 +372,9 @@ function buildSystemScene(sysId){
       ringMats.push(rm);
     }
 
-    if (d.decoMoons){
-      for (const m of d.decoMoons){
+    const allMoons = [...(d.decoMoons || []), ...(typeof moonsOf === 'function' ? moonsOf(d) : [])];
+    if (allMoons.length){
+      for (const m of allMoons){
         const mm = new THREE.ShaderMaterial({
           vertexShader:PLANET_VERT, fragmentShader:PLANET_FRAG,
           uniforms:{
@@ -385,7 +389,9 @@ function buildSystemScene(sysId){
           }});
         const moon = new THREE.Mesh(new THREE.SphereGeometry(m.r, 24, 24), mm);
         systemScene.add(moon);
-        moonsList.push({ mesh:moon, hostId:d.id, dist:m.dist, speed:m.speed, angle:Math.random()*6.28, incl:m.incl||0, mat:mm });
+        const mt2 = mkMoonTrail(m.dist);
+        systemScene.add(mt2.line);
+        moonsList.push({ mesh:moon, hostId:d.id, dist:m.dist, speed:m.speed, angle:Math.random()*6.28, incl:m.incl||0, mat:mm, ring: mt2.line, ringMat: mt2.mat });
       }
     }
 
@@ -409,7 +415,7 @@ function buildSystemScene(sysId){
       color: 0x9a948c, size: 0.42, sizeAttenuation: true, transparent: true, opacity: 0.72, depthWrite: false }));
     systemScene.add(beltObj);
 
-    if (!REGIONS[regionOf(sys)].hpS) return;   // 安全区:只有带,没有海盗
+    if (!REGIONS[regionOf(sys)].hpS || sys.id === homeSysId()) return;   // 安全区与母港星系:只有带,没有海盗
     const group = new THREE.Group();
     const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.85),
       new THREE.MeshBasicMaterial({ color: 0xe85959, wireframe: true }));
@@ -474,8 +480,27 @@ function dirIsLand(mask, pt){
 
 /* ── 区划布点:斐波那契球面均匀分布(互不重叠),核心点优先陆地 ── */
 const _placements = {};
+/* 卫星运行轨迹:与行星同款角度渐隐环,圆心每帧跟随母星 */
+function mkMoonTrail(dist){
+  const segs = 128;
+  const op = new Float32Array(segs * 3), oa = new Float32Array(segs);
+  for (let i = 0; i < segs; i++){
+    const a = i / segs * Math.PI * 2;
+    op.set([Math.cos(a) * dist, 0, Math.sin(a) * dist], i * 3);
+    oa[i] = a;
+  }
+  const og = new THREE.BufferGeometry();
+  og.setAttribute('position', new THREE.BufferAttribute(op, 3));
+  og.setAttribute('aAng', new THREE.BufferAttribute(oa, 1));
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: TRAIL_VERT, fragmentShader: TRAIL_FRAG,
+    uniforms: { uAng: { value: 0 }, uColor: { value: new THREE.Vector3(0.5, 0.58, 0.68) } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+  return { line: new THREE.LineLoop(og, mat), mat };
+}
+
 function districtPlacements(p){
-  const N = Math.max(1, maxSlotsOf(p));
+  const N = Math.max(1, maxSlotsOf(p) + moonPortSlots(p));
   const ck = p.key + ':' + N;
   if (_placements[ck]) return _placements[ck];
   const rng = mulberry32(hashStr(p.key + ':place'));
@@ -506,17 +531,70 @@ function districtDir(p, i){
 
 /* ── 贸易线货船:菱形标记(实心=去程满载,空心=返程) ── */
 function makeDiamondTex(filled){
-  const c = document.createElement('canvas'); c.width = c.height = 64;
+  // 竖直瘦菱形:顶/底角 45°,左右钝角 135°;高分辨率细线 + 内芯,精致小巧
+  const c = document.createElement('canvas'); c.width = c.height = 128;
   const g = c.getContext('2d');
-  g.translate(32, 32); g.rotate(Math.PI / 4);
-  g.strokeStyle = 'rgba(255,210,140,0.95)'; g.lineWidth = 5;
-  if (filled){ g.fillStyle = 'rgba(255,190,110,0.9)'; g.fillRect(-13, -13, 26, 26); }
-  g.strokeRect(-13, -13, 26, 26);
+  g.translate(64, 64);
+  const hh = 50, hw = hh * Math.tan(Math.PI / 8);   // 半高 50,半宽 ≈ 20.7
+  const dia = (s) => {
+    g.beginPath();
+    g.moveTo(0, -hh*s); g.lineTo(hw*s, 0); g.lineTo(0, hh*s); g.lineTo(-hw*s, 0);
+    g.closePath();
+  };
+  g.strokeStyle = 'rgba(255,214,150,0.95)'; g.lineWidth = 3.5;
+  if (filled){
+    dia(1); g.fillStyle = 'rgba(255,190,110,0.85)'; g.fill(); g.stroke();
+    dia(0.45); g.fillStyle = 'rgba(255,240,210,0.95)'; g.fill();   // 高光内芯
+  } else {
+    dia(1); g.stroke();
+    dia(0.45); g.lineWidth = 2; g.stroke();                        // 空心:双层轮廓
+  }
   return new THREE.CanvasTexture(c);
 }
 let _diaFill = null, _diaHollow = null;
 const _shipPool = [];
 let shipGroup = null;
+
+/* ── 尾迹系统:船 / 列车共用(渐隐折线,加色混合) ── */
+const TRAIL_COLORS = [0xffffff, 0x5fb8ff, 0xf5a142, 0x7fe3a0];   // 白 / 蓝 / 橙 / 绿
+const TRAIL_N = 14;
+function engineTierColor(){
+  const lv = save.train.engineLv;
+  return lv >= 7 ? 0x9fe8ff : lv >= 4 ? 0xffc46b : 0xf59e0b;     // 列车:随引擎升级 琥珀→亮橙→青白
+}
+function mkTrail(colorHex){
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_N * 3), 3));
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(TRAIL_N * 3), 3));
+  const line = new THREE.Line(g, new THREE.LineBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.85,
+    blending: THREE.AdditiveBlending, depthWrite: false }));
+  line.frustumCulled = false;
+  line.visible = false;
+  return { line, pts: [], color: new THREE.Color(colorHex) };
+}
+function pushTrail(tr, x, y, z){
+  const pts = tr.pts, last = pts[0];
+  if (last){
+    const dd = Math.abs(last.x - x) + Math.abs(last.y - y) + Math.abs(last.z - z);
+    if (dd > 8) pts.length = 0;            // 端点跳变(返程换头):重置尾迹
+    else if (dd < 0.12) return;            // 距离采点:14 点 ≈ 1.7 单位长的尾迹,速度无关
+  }
+  pts.unshift({ x, y, z });
+  if (pts.length > TRAIL_N) pts.length = TRAIL_N;
+  const pa = tr.line.geometry.attributes.position.array;
+  const ca = tr.line.geometry.attributes.color.array;
+  for (let i = 0; i < TRAIL_N; i++){
+    const p = pts[Math.min(i, pts.length - 1)];
+    pa[i*3] = p.x; pa[i*3+1] = p.y; pa[i*3+2] = p.z;
+    const f = Math.pow(1 - i / TRAIL_N, 1.6);
+    ca[i*3] = tr.color.r * f; ca[i*3+1] = tr.color.g * f; ca[i*3+2] = tr.color.b * f;
+  }
+  tr.line.geometry.attributes.position.needsUpdate = true;
+  tr.line.geometry.attributes.color.needsUpdate = true;
+  tr.line.visible = pts.length > 1;
+}
+function clearTrail(tr){ if (tr){ tr.pts.length = 0; tr.line.visible = false; } }
 function updateTradeShips(){
   if (mode !== 'system' || !systemScene) { if (shipGroup) shipGroup.visible = false; return; }
   if (!shipGroup || shipGroup.parent !== systemScene){
@@ -525,23 +603,32 @@ function updateTradeShips(){
     shipGroup = new THREE.Group();
     systemScene.add(shipGroup);
     _shipPool.length = 0;
+    _npcPool.length = 0; _npcRoutes = null;   // 场景重建:NPC 池一并重建
+    trainTrailS = null;
   }
   shipGroup.visible = true;
   const lines = (save.lines || []).filter(l => l.on && l.a.startsWith(curSysId + '/'));
-  while (_shipPool.length < lines.length){
+  const nShips = lines.length * SHIPS_PER_LANE;          // 每航道 2 艘
+  while (_shipPool.length < nShips){
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: _diaFill, depthWrite: false, transparent: true }));
-    s.scale.setScalar(0.9);
+    s.scale.setScalar(0.45);                       // 面积缩至 1/4
+    s.userData.trail = mkTrail(0xffffff);          // 颜色随当前货物,每帧更新
+    shipGroup.add(s.userData.trail.line);
     shipGroup.add(s); _shipPool.push(s);
   }
-  const find = key => planetObjs.find(o => o.data.key === key);
+  const find = key => {
+    const o = planetObjs.find(x => x.data.key === key);
+    if (o && o.data.moonOf){ const h = planetObjs.find(x => x.data.id === o.data.moonOf && !x.isMoon); if (h) return h; }
+    return o;
+  };
   for (let i = 0; i < _shipPool.length; i++){
     const s = _shipPool[i];
-    const l = lines[i];
-    if (!l){ s.visible = false; continue; }
+    const l = lines[Math.floor(i / SHIPS_PER_LANE)];
+    if (!l){ s.visible = false; clearTrail(s.userData.trail); continue; }
     const A = find(l.a), B = find(l.b);
-    if (!A || !B){ s.visible = false; continue; }
+    if (!A || !B){ s.visible = false; clearTrail(s.userData.trail); continue; }
     const cyc = lineCycleSec(l) * 1000;
-    const phase = ((Date.now() - l.t0) % cyc) / cyc;
+    const phase = ((Date.now() - l.t0 + (i % SHIPS_PER_LANE) * cyc * 0.5) % cyc) / cyc;
     const going = phase < 0.5;
     const t = going ? phase * 2 : (phase - 0.5) * 2;
     A.mesh.getWorldPosition(_ta); B.mesh.getWorldPosition(_tb);
@@ -549,6 +636,20 @@ function updateTradeShips(){
     s.position.set(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t + 0.6, from.z + (to.z - from.z) * t);
     s.material.map = going ? _diaFill : _diaHollow;   // 实心=运送 / 空心=返回
     s.visible = true;
+    // 入港/出港音效:跨越航段端点时触发(节流)
+    const lp = s.userData.lastPhase;
+    if (lp !== undefined){
+      if ((lp < 0.5 && phase >= 0.5) || lp > phase){   // 到达对岸 / 回到起点
+        shipPortSfx('dock');
+        setTimeout(() => shipPortSfx('undock'), 900);  // 装卸后离港
+      }
+    }
+    s.userData.lastPhase = phase;
+    // 尾迹颜色 = 当前方向所运货物:成员白色,资源用其图标色,空载中性灰
+    const cargo = going ? l.aSend : l.bSend;
+    s.userData.trail.color.set(cargo === 'pax' ? '#ffffff'
+      : (cargo && cargo !== 'none' && RESOURCES[cargo]) ? RESOURCES[cargo].color : '#8b93a5');
+    pushTrail(s.userData.trail, s.position.x, s.position.y, s.position.z);
   }
   updateNpcShips(lines.length);
 }
@@ -560,7 +661,7 @@ function updateNpcShips(playerLines){
   const npcSig = curSysId + ':' + Object.keys(save.est).length;   // 新殖民地建立时失效重算
   if (_npcSysId !== npcSig || !_npcRoutes){
     _npcSysId = npcSig;
-    const devs = planetObjs.filter(o => save.est[o.data.key]).map(o => o.data.key);
+    const devs = planetObjs.filter(o => save.est[o.data.key] && !o.data.moonOf).map(o => o.data.key);   // 卫星不作航点(地月一家)
     _npcRoutes = [];
     for (let i = 0; i < devs.length; i++)
       for (let j = i + 1; j < devs.length; j++) _npcRoutes.push([devs[i], devs[j]]);
@@ -572,17 +673,22 @@ function updateNpcShips(playerLines){
     const s = new THREE.Sprite(new THREE.SpriteMaterial({
       map: _npcPool.length % 2 ? _diaHollow : _diaFill,
       depthWrite: false, transparent: true, opacity: 0.45, color: 0xbfc6d4 }));
-    s.scale.setScalar(0.62);
+    s.scale.setScalar(0.31);                          // 面积缩至 1/4
+    // NPC 民船:虚拟货物固定色(白=载人,其余按资源图标色)
+    const npcCargo = ['#ffffff', RESOURCES.metal.color, RESOURCES.chem.color, RESOURCES.ice.color, RESOURCES.he3.color, RESOURCES.deut.color];
+    s.userData.trail = mkTrail(npcCargo[(_npcPool.length * 5 + 2) % npcCargo.length]);
+    s.userData.trail.line.material.opacity = 0.5;     // NPC 尾迹更淡
+    shipGroup.add(s.userData.trail.line);
     shipGroup.add(s); _npcPool.push(s);
   }
   const find = key => planetObjs.find(o => o.data.key === key);
   const now = Date.now();
   for (let i = 0; i < _npcPool.length; i++){
     const s = _npcPool[i];
-    if (i >= want){ s.visible = false; continue; }
+    if (i >= want){ s.visible = false; clearTrail(s.userData.trail); continue; }
     const route = _npcRoutes[i % _npcRoutes.length];
     const A = find(route[0]), B = find(route[1]);
-    if (!A || !B){ s.visible = false; continue; }
+    if (!A || !B){ s.visible = false; clearTrail(s.userData.trail); continue; }
     const cyc = (planetTravelSec(route[0], route[1]) * 2 + SHIP_HANDLING) * 1000;
     const phase = ((now + i * 37117) % cyc) / cyc;     // 相位错开,各跑各的
     const going = phase < 0.5;
@@ -591,6 +697,7 @@ function updateNpcShips(playerLines){
     const from = going ? _ta : _tb, to = going ? _tb : _ta;
     s.position.set(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t + 0.35, from.z + (to.z - from.z) * t);
     s.visible = true;
+    pushTrail(s.userData.trail, s.position.x, s.position.y, s.position.z);
   }
 }
 
@@ -790,7 +897,9 @@ function buildLabels(){
       const el = document.createElement('div');
       el.className = 'p-label sysnode';
       el.style.color = n.sys.nodeCol;
-      el.onclick = () => focusSystemNode(n.sys.id);
+      el.onclick = () => { hideSysPreview(); focusSystemNode(n.sys.id); };
+      el.onmouseenter = () => showSysPreview(n.sys.id, el);
+      el.onmouseleave = hideSysPreview;
       wrap.appendChild(el);
       labelEls[n.sys.id] = el;
     }
@@ -830,19 +939,72 @@ function refreshLabelText(){
     for (const o of planetObjs){
       const d = o.data, lv = devLevel(d), el = labelEls[d.key];
       if (!el) continue;
+      const port = (typeof portDone === 'function' && portDone(d.key))
+        ? `<span class="portb" title="星港 · 贸易线 ${linesAt(d.key).length} 条"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:10px;height:10px"><circle cx="12" cy="5.5" r="2.2"/><path d="M12 7.7V19"/><path d="M5 13a7 7 0 0 0 14 0"/><path d="M8.5 10.5h7"/></svg>${linesAt(d.key).length}</span>` : '';
       el.innerHTML = `${iconOf(d)}<span style="color:var(--text-dim)">${d.name}</span>` +
-        (lv>0 ? `<span class="lvb">${LEVELS[lv].name}</span>` : '');
+        (lv>0 ? `<span class="lvb">${LEVELS[lv].name}</span>` : '') + port;
     }
     const pe = labelEls['__pirate'];
     if (pe && pirateBase){
-      if (pirateAlive(pirateBase.sysId))
-        pe.innerHTML = `☠<span>海盗基地</span><span class="lockb" style="color:#e85959;border-color:rgba(232,89,89,.45)">可进攻</span>`;
+      const wreck = pirateWreckOf(pirateBase.sysId);
+      if (wreck){
+        const left = Math.max(0, (wreck.until - Date.now()) / 1000);
+        pe.innerHTML = `♻<span style="color:#7fd6c9">残骸场</span><span class="lockb" style="color:#7fd6c9;border-color:rgba(127,214,201,.45)">回收 ${Math.floor(left/60)}:${String(Math.floor(left%60)).padStart(2,'0')}</span>`;
+      } else if (pirateAlive(pirateBase.sysId)){
+        const ph = piratePhaseOf(pirateBase.sysId);
+        const run = save.pirateRun && save.pirateRun[pirateBase.sysId];
+        const camp = pirateCampaign(sysById(pirateBase.sysId));
+        const pi = Math.min(ph, camp.length - 1);
+        pe.innerHTML = run
+          ? `☠<span>海盗巢穴</span><span class="lockb" style="color:var(--amber);border-color:rgba(245,158,11,.45)">⛟ 突击中 ${Math.round(pirateRunProgress(run)*100)}%</span>`
+          : `☠<span>海盗巢穴</span><span class="lockb" style="color:#e85959;border-color:rgba(232,89,89,.45)">${camp[pi].icon} ${camp[pi].name} ${pi + 1}/${camp.length}</span>`;
+      }
       else {
         const s = pirateRespawnLeft(pirateBase.sysId);
         pe.innerHTML = `☠<span style="opacity:.55">海盗残骸</span><span class="lockb">重建 ${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}</span>`;
       }
     }
   }
+}
+/* ── 星际飞行轨迹:全程贝塞尔弧(淡)+ 引擎色彗尾(沿弧渐隐),替代旧点迹 ── */
+let travelArc = null;
+function buildTravelArc(fromId, toId){
+  if (travelArc){ galaxyScene.remove(travelArc.group); travelArc = null; }
+  const A = nodePos(fromId), B = nodePos(toId);
+  const mid = A.clone().add(B).multiplyScalar(0.5);
+  const d = A.distanceTo(B);
+  const perp = new THREE.Vector3(-(B.z - A.z), 0, B.x - A.x).normalize().multiplyScalar(d * 0.14);
+  const ctrl = mid.clone().add(perp).setY(1.0 + d * 0.04);
+  const curve = new THREE.QuadraticBezierCurve3(A.clone().setY(0.3), ctrl, B.clone().setY(0.3));
+  const group = new THREE.Group();
+  const arcLine = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(curve.getPoints(48)),
+    new THREE.LineBasicMaterial({ color: engineTierColor(), transparent: true, opacity: 0.20 }));
+  group.add(arcLine);
+  const N = 18;
+  const cg = new THREE.BufferGeometry();
+  cg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+  cg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+  const comet = new THREE.Line(cg, new THREE.LineBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.95,
+    blending: THREE.AdditiveBlending, depthWrite: false }));
+  group.add(comet);
+  galaxyScene.add(group);
+  travelArc = { key: fromId + '>' + toId, curve, group, comet, N };
+}
+function updateTravelArc(prog){
+  const { curve, comet, N } = travelArc;
+  const pos = comet.geometry.attributes.position;
+  const col = comet.geometry.attributes.color;
+  const c = new THREE.Color(engineTierColor());
+  const tail = 0.16;
+  for (let i = 0; i < N; i++){
+    const f = i / (N - 1);
+    const pt = curve.getPoint(Math.max(0, prog - tail * (1 - f)));
+    pos.setXYZ(i, pt.x, pt.y, pt.z);
+    col.setXYZ(i, c.r * f * f, c.g * f * f, c.b * f * f);   // 尾透明 → 头全亮
+  }
+  pos.needsUpdate = true; col.needsUpdate = true;
 }
 const _wp = new THREE.Vector3();
 const _ta = new THREE.Vector3(), _tb = new THREE.Vector3();
@@ -854,8 +1016,17 @@ function positionTrainTag(){
   // 银河总图:锁定所在星系节点下方;跨星系航行沿航线滑行
   if (mode === 'galaxy'){
     let p;
-    if (tr.status === 'travel') p = nodePos(tr.from).lerp(nodePos(tr.to), travelProgress());
-    else p = nodePos(tr.sys);
+    if (tr.status === 'travel'){
+      if (!travelArc || travelArc.key !== tr.from + '>' + tr.to) buildTravelArc(tr.from, tr.to);
+      const prog = travelProgress();
+      p = travelArc.curve.getPoint(prog);      // 列车沿弧滑行(不再直线 lerp)
+      updateTravelArc(prog);
+      travelArc.group.visible = true;
+    } else {
+      if (travelArc) travelArc.group.visible = false;
+      p = nodePos(tr.sys);
+    }
+    clearTrail(trainTrailS);
     _ta.set(p.x, p.y - 1.2, p.z).project(camera);
     if (_ta.z > 1 || _ta.z < -1){ tag.style.opacity = 0; return; }
     tag.style.opacity = 1;
@@ -886,6 +1057,13 @@ function positionTrainTag(){
       pz = _ta.z + (_tb.z - _ta.z) * t;
     }
   }
+  // 星内转移尾迹
+  if (!trainTrailS) trainTrailS = mkTrail(engineTierColor());
+  if (systemScene && trainTrailS.line.parent !== systemScene) systemScene.add(trainTrailS.line);
+  trainTrailS.color.setHex(engineTierColor());
+  if (typeof localTransit === 'function' && localTransit()) pushTrail(trainTrailS, px, py, pz);
+  else clearTrail(trainTrailS);
+  clearTrail(trainTrailG);
   _ta.set(px, py, pz).project(camera);
   if (_ta.z > 1 || _ta.z < -1){ tag.style.opacity = 0; return; }
   tag.style.opacity = 1;
@@ -1015,6 +1193,10 @@ function animate(){
         _hostP.y + Math.sin(m.angle*0.9)*m.dist*Math.sin(m.incl),
         _hostP.z + Math.sin(m.angle)*m.dist);
       if (m.mat) m.mat.uniforms.uTime.value = t;
+      if (m.ring){
+        m.ring.position.copy(_hostP);
+        m.ringMat.uniforms.uAng.value = ((m.angle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
+      }
     }
     if (beltObj) beltObj.rotation.y = t * 0.008;
     if (pirateBase){

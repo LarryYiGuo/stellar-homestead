@@ -43,6 +43,8 @@ function openPanel(d){
       <div class="item"><div class="k">轨道半径</div><div class="v">${d.moonOf ? '环沧澜轨道' : d.au.toFixed(2)+' AU'}</div></div>
       <div class="item"><div class="k">公转周期</div><div class="v">${d.moonOf ? '3.2 标准日' : d.period+' 标准日'}</div></div>
       <div class="item"><div class="k">宜居度</div><div class="v">${(d.habit*100).toFixed(0)} %</div></div>
+      ${moonsOf(d).length ? `<div class="item"><div class="k">卫星</div><div class="v">${moonsOf(d).length} 颗(${moonsOf(d).map(m => MOON_SIZES[m.size].name[0]).join('/')})</div></div>
+      <div class="item"><div class="k">卫星港潜力</div><div class="v" style="color:var(--cyan)">+${moonsOf(d).reduce((s,m)=>s+m.slots,0)} 区划</div></div>` : ''}
     </div>
     <div class="divider"></div>
     <div class="sec-label">星球开发</div>
@@ -72,19 +74,42 @@ function renderDevBlock(){
     blk.innerHTML = `
       ${dockHtml}
       ${condHtml}
-      <button id="establish-btn" class="act-btn" ${locked?'disabled':''}>${locked ? '条 件 未 满 足' : `建 立 前 哨(移民 ${fmtNum(ESTABLISH_COLONISTS)})`}</button>
+      ${(() => {                                   // 火种规则:星系首殖民消耗休眠舱
+        const seed = !sysHasColony(d.sysId);
+        const hasCryo = seedCryoIndex() >= 0;
+        const label = locked ? '条 件 未 满 足'
+          : seed ? '播 撒 火 种(消耗 休眠舱 ×1)'
+          : `建 立 前 哨(移民 ${fmtNum(ESTABLISH_COLONISTS)})`;
+        return `<button id="establish-btn" class="act-btn" ${locked || (seed && !hasCryo) ? 'disabled' : ''}>${label}</button>
+          ${seed ? `<div class="bld ${hasCryo ? 'done' : 'locked'}" style="margin-top:.35rem">${hasCryo ? '✓' : '○'} 无人星系的第一块殖民地只能由<b>休眠舱(火种)</b>建立${hasCryo ? '(编组就绪)' : '(编组中没有休眠舱)'}</div>` : ''}`;
+      })()}
       <p class="hint">${roleHint}</p>
-      <p class="hint">建立殖民地将消耗随车移民 ${fmtNum(ESTABLISH_COLONISTS)} 人。部署后开发度只随<b>真实时间流逝</b>累积,离线也不会停止。宜居度 ${(d.habit*100).toFixed(0)}% 决定发展速率。</p>`;
+      <p class="hint">${!sysHasColony(d.sysId)
+        ? '本星系尚无人定居:建立将整舱消耗一节休眠舱(内含 1000 名深眠拓荒者与种子库),不占用随车移民。'
+        : `建立殖民地将消耗随车移民 ${fmtNum(ESTABLISH_COLONISTS)} 人。`}部署后开发度只随<b>真实时间流逝</b>累积,离线也不会停止。宜居度 ${(d.habit*100).toFixed(0)}% 决定发展速率。</p>`;
     bindDockBtn(d);
     if (!locked){
-      $('establish-btn').onclick = () => {
-        if (save.train.pax < ESTABLISH_COLONISTS){ sfx('err'); return; }
-        save.train.pax -= ESTABLISH_COLONISTS;
-        save.est[d.key] = Date.now();
-        if (d.role === 'hab') save.popExtra[d.key] = (save.popExtra[d.key] || 0) + ESTABLISH_COLONISTS;
-        addInfluence(INF_FX.establish);   // 开拓殖民影响力
-        persistSave();
-        showToast(`<b>${d.name}</b> · ${fmtNum(ESTABLISH_COLONISTS)} 名拓荒者登陆,前哨已建立`, {sfx:'confirm', say:'Outpost established.'});
+      const eb = $('establish-btn');
+      if (eb) eb.onclick = () => {
+        const seed = !sysHasColony(d.sysId);
+        if (seed){
+          const i = seedCryoIndex();
+          if (i < 0){ sfx('err'); return; }
+          save.train.cars.splice(i, 1);            // 火种舱整舱消耗
+          save.est[d.key] = Date.now();
+          if (d.role === 'hab') save.popExtra[d.key] = (save.popExtra[d.key] || 0) + ESTABLISH_COLONISTS;
+          addInfluence(INF_FX.establish);
+          persistSave();
+          showToast(`火种舱降下 <b>${d.name}</b> 轨道 —— 1000 名拓荒者苏醒,本星系第一块殖民地建立`, {sfx:'unlock', say:'Seed colony deployed.'});
+        } else {
+          if (save.train.pax < ESTABLISH_COLONISTS){ sfx('err'); return; }
+          save.train.pax -= ESTABLISH_COLONISTS;
+          save.est[d.key] = Date.now();
+          if (d.role === 'hab') save.popExtra[d.key] = (save.popExtra[d.key] || 0) + ESTABLISH_COLONISTS;
+          addInfluence(INF_FX.establish);   // 开拓殖民影响力
+          persistSave();
+          showToast(`<b>${d.name}</b> · ${fmtNum(ESTABLISH_COLONISTS)} 名拓荒者登陆,前哨已建立`, {sfx:'confirm', say:'Outpost established.'});
+        }
         renderDevBlock(); refreshDock(); refreshLabelText();
       };
     }
@@ -125,7 +150,7 @@ function renderDevBlock(){
         <div class="eco-v resv">${fmtNum(resOf(d))}</div>
         <div class="eco-sub">当前产率 <span>${fmtNum(resRateOf(d))}/s</span> · 丰度 ×${d.res.rich.toFixed(1)}</div>
         <div class="eco-sub">仓内待收取 <span style="color:var(--amber)">${fmtNum(avail)}</span></div>
-        <div class="buff-line">劳动力协同:全银河居住型星球等级和 ${sumLevels('hab')} → 产率 <b>×${rateBuff().toFixed(2)}</b></div>
+        <div class="buff-line">劳动力协同:居住星等级和 ${sumLevels('hab')} → 产率 <b>×${rateBuff().toFixed(2)}</b> · 总人口红利 <b>×${workforceBuff().toFixed(2)}</b></div>
         ${docked ? `<button id="collect-btn" class="act-btn amber" style="margin-top:.7rem" ${canCollect?'':'disabled'}>${info.cdLeft > 0 ? '装载冷却 · ' + fmtDuration(info.cdLeft) : info.avail <= 0 ? '仓 内 无 资 源' : '装 载 本 星 系 资 源'}</button>`
           : `<div class="buff-line" style="color:var(--text-muted)">⚠ 产出滞留仓内 —— 需星际列车靠站收取</div>`}
       </div>`;
@@ -222,8 +247,13 @@ function migBoxHtml(p){
   const emigratable = canEmigrate(p);
   let btns = '';
   if (docked){
+    const bd = save.boarding && save.boarding.key === p.key ? save.boarding : null;
+    const prog = bd ? Math.min(1, (Date.now() - bd.at) / (bd.dur * 1000)) : 0;
+    const boardBtn = bd
+      ? `<button class="act-btn cyan boarding" disabled style="margin:0;padding:.5rem;--bdur:${bd.dur}s;--bdelay:-${((Date.now()-bd.at)/1000).toFixed(2)}s"><span>装载中 ${Math.max(0,(bd.at+bd.dur*1000-Date.now())/1000).toFixed(1)}s</span></button>`
+      : `<button id="board-btn" class="act-btn cyan" style="margin:0;padding:.5rem" ${emigratable&&mi.pool>0&&space>0?'':'disabled'}>装载移民(${fmtNum(Math.min(mi.pool, space))})</button>`;
     btns = `<div style="display:flex;gap:.5rem;margin-top:.55rem">
-      <button id="board-btn" class="act-btn cyan" style="margin:0;padding:.5rem" ${emigratable&&mi.pool>0&&space>0?'':'disabled'}>装载移民(${fmtNum(Math.min(mi.pool, space))})</button>
+      ${boardBtn}
       <button id="unload-btn" class="act-btn" style="margin:0;padding:.5rem" ${save.train.pax>0?'':'disabled'}>落户(随车 ${fmtNum(save.train.pax)})</button>
     </div>`;
   }
@@ -243,8 +273,9 @@ function migBoxHtml(p){
 function bindMigBtns(p){
   const bb = $('board-btn');
   if (bb) bb.onclick = () => {
-    const n = boardMigrants(p);
-    if (n > 0){ showToast(`<b>${fmtNum(n)}</b> 名移民登车(随车 ${fmtNum(save.train.pax)} / ${fmtNum(paxCapacity())})`, {sfx:'confirm', say:'Boarding complete.'}); renderDevBlock(); }
+    if (save.boarding){ sfx('err'); return; }
+    const sec = startBoarding(p);
+    if (sec){ showToast(`移民登车中 —— 预计 <b>${sec}s</b>`, {sfx:'blip', say:'Boarding in progress.'}); renderDevBlock(); }
     else sfx('err');
   };
   const ub = $('unload-btn');
@@ -278,19 +309,18 @@ function starportHtml(p){
       <button id="port-rush" class="close-btn" style="margin-top:.4rem" ${(save.influence||0) >= rush ? '' : 'disabled'}>影响力注资,即刻完工(${fmtNum(rush)} 影响力)</button>`;
   } else {
     const capN = lineCapacityOf(p), used = linesAt(key).length;
-    inner = `<div class="buff-line">⬡ 星港运营中 · 贸易线 ${used}/${capN}(容量 = 其他区划/3 + 商贸区划)</div>`;
+    const dlv = dockLvOf(key), duc = dockUpCost(dlv + 1);
+    inner = `<div class="buff-line">⬡ 星港运营中 · 贸易线 ${used}/${capN} · 船坞 LV${dlv}(单船 ${SHIP_CAP * dlv} × ${SHIPS_PER_LANE} 艘/航道)</div>
+      <button data-dock="1" class="close-btn" style="margin:.3rem 0" ${dlv < save.train.engineLv && canAfford(duc) ? '' : 'disabled'} title="船坞等级不可超过车头等级">船坞升级 → LV${dlv + 1}(${fmtNum(duc.metal)} 金属,全部航线生效)</button>`;
     // 既有线路
     (save.lines || []).forEach((l, i) => {
       if (l.a !== key && l.b !== key) return;
       const other = planetByKey(l.a === key ? l.b : l.a);
       const sendOpts = w => ['none','pax', ...Object.keys(RESOURCES)].map(o =>
         `<option value="${o}" ${w === o ? 'selected' : ''}>${o === 'none' ? '不运' : o === 'pax' ? '移民' : RESOURCES[o].name}</option>`).join('');
-      inner += `<div class="opt"><div class="ol">⇄ ${other ? other.name : '?'} · LV${l.lv} · 容量 ${SHIP_CAP * l.lv}/趟 · 周期 ${lineCycleSec(l)}s
+      inner += `<div class="opt"><div class="ol">⇄ ${other ? other.name : '?'} · 容量 ${fmtNum(lineCapPerTrip(l))}/趟(${SHIPS_PER_LANE} 艘货轮)· 周期 ${lineCycleSec(l)}s
           <span class="od">去程 <select data-lsend="${i}:a">${sendOpts(l.aSend)}</select> · 返程 <select data-lsend="${i}:b">${sendOpts(l.bSend)}</select></span></div>
-        <div style="display:flex;flex-direction:column;gap:.3rem">
-          <button data-ltoggle="${i}">${l.on ? '停运' : '开始运输'}</button>
-          <button data-lup="${i}" ${l.lv < save.train.engineLv && canAfford(lineUpCost(l.lv + 1)) ? '' : 'disabled'} title="线路等级不可超过车头等级(${save.train.engineLv})">升级 ${fmtNum(lineUpCost(l.lv + 1).metal)}金属</button>
-        </div></div>`;
+        <button data-ltoggle="${i}">${l.on ? '停运' : '开始运输'}</button></div>`;
     });
     // 新建线
     const targets = lineTargets(p);
@@ -303,32 +333,118 @@ function starportHtml(p){
       inner += `<div class="bld locked">○ 暂无可连接对象(同星系其他行星需先建星港)</div>`;
     }
   }
+  // 星港仓库:随时可见仓内物资
+  if (portDone(key)){
+    const wst = pstoreOf(key);
+    const rows = Object.keys(RESOURCES).filter(k => (wst[k] || 0) > 0.5)
+      .map(k => `<span class="dchip" style="--dc:${RESOURCES[k].color}" title="${RESOURCES[k].name}">${RES_ICONS[k]}<b>${fmtNum(Math.floor(wst[k]))}</b></span>`).join('');
+    inner += `<div class="eco-box" style="margin-top:.5rem"><div class="eco-k">星港仓库 · ${p.role === 'res' ? '产出待转运(星门货船定期收取)' : '殖民地补给储备'}</div>
+      <div class="dchip-row" style="margin-top:.35rem">${rows || '<span class="bld locked" style="border:none;padding:0">仓内无物资</span>'}</div></div>`;
+  }
   // 母港设置
   const isHome = save.homePort === key;
   inner += isHome
     ? `<div class="buff-line" style="color:var(--purple)">⚓ 母港 —— 列车不在时,居住/商贸区划仍按 1/3 速率产出影响力</div>`
     : (p.role === 'hab' && portDone(key) ? `<button id="set-home" class="close-btn" style="margin-top:.4rem">设为母港(影响力基地)</button>` : '');
+  // ── 星门(一系一门,设于首星星港旁) ──
+  const fp = sysFirstPort(p.sysId);
+  if (fp === key){
+    const g = gateOf(p.sysId);
+    const isHub = p.sysId === homeSysId();
+    if (!save.gateUnlocked){
+      inner += `<div class="bld locked" style="margin-top:.35rem">⌬ 星门技术未解锁 —— 跟进《地疤》残响(第六弧)</div>`;
+    } else if (!g){
+      const gateCostTxt = Object.entries(GATE_COST).map(([k,v]) => `${RESOURCES[k].name} ${fmtNum(v)}`).join(' + ');
+      inner += `<div class="opt"><div class="ol">⌬ 建造星门(作用圈物流网)<span class="od">货船在作用圈(${GATE_RANGE} 银河单位)内收集资源星产出,并可向圈内另一座星门接力输送;${gateCostTxt} · 工期 ${fmtDuration(GATE_TIME)}</span></div>
+        <button data-gate-build="1" ${canAfford(GATE_COST) ? '' : 'disabled'}>奠基</button></div>`;
+    } else if (!gateDone(p.sysId)){
+      inner += artBanner('img/stargate.jpg', 'STARGATE · UNDER CONSTRUCTION', 88)
+        + `<div class="bld building">⌬ 星门建设中 · 剩余 ${fmtDuration(Math.max(0, (g.at + g.dur * 1000 - Date.now()) / 1000))}</div>`;
+    } else {
+      const hop = gateNextHop(p.sysId);
+      const inRange = gateSystemsInRange(p.sysId);
+      const ownGates = inRange.filter(sid => save.gates[sid] && gateDone(sid));
+      const coveredN = gateCollectScope(p.sysId).length;
+      const collectOn = g.collect !== 0;
+      const deliverOn = !!g.deliver;
+      const curTarget = g.target && save.gates[g.target] && gateDone(g.target) && sysDist(p.sysId, g.target) <= GATE_RANGE ? g.target : '';
+      const targetOpts = `<option value="">自动(朝母港${hop ? ':' + sysById(hop).name : isHub ? '' : ' — 圈内无节点'})</option>`
+        + ownGates.map(sid => `<option value="${sid}" ${curTarget === sid ? 'selected' : ''}>${sysById(sid).name}(${sysDist(p.sysId, sid).toFixed(1)} 单位)</option>`).join('');
+      const gateCtl = `<div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.35rem;align-items:center">
+        <button data-gate-collect="1" class="close-btn" style="${collectOn ? 'color:var(--green);border-color:rgba(62,207,142,.5)' : ''}">收集圈内物资:${collectOn ? '开' : '关'}(覆盖 ${coveredN} 系)</button>
+        ${isHub ? '' : `<button data-gate-deliver="1" class="close-btn" style="${deliverOn ? 'color:var(--green);border-color:rgba(62,207,142,.5)' : ''}">本地分发:${deliverOn ? '开' : '关'}</button>
+        <span class="eco-sub" style="margin:0">输送至 <select data-gate-target>${targetOpts}</select></span>`}
+      </div>`;
+      const ups = [['line', `货船等级`, `批量 ${gateBatch(g)}/班`], ['speed', '班次速度', `周期 ${gateCycleSec(g)}s`], ['store', '枢纽仓储', `容量 ${fmtNum(gateHubCap(g))}/资源`]]
+        .map(([b, name, eff]) => {
+          const lv = g[b + 'Lv'] || 1;
+          if (lv >= GATE_MAXLV) return `<button disabled>${name} MAX</button>`;
+          const c = gateUpCost(b, lv + 1);
+          return `<button data-gate-up="${b}" ${canAfford(c) ? '' : 'disabled'} title="${Object.entries(c).map(([k,v]) => RESOURCES[k].name + ' ' + fmtNum(v)).join(' + ')}">${name} LV${lv}→${lv + 1}</button>`;
+        }).join('');
+      const eff = `货船 LV${g.lineLv || 1}(${gateBatch(g)}/班)· 班次 ${gateCycleSec(g)}s · 作用圈 ${GATE_RANGE} 单位` + (isHub ? ` · 枢纽容量 ${fmtNum(gateHubCap(g))}/资源` : (curTarget || hop ? '' : ' · <b style="color:var(--red)">圈内无接力节点 —— 物资滞留本门</b>'));
+      const storeTxt = isHub
+        ? Object.entries(g.store || {}).filter(([, v]) => v > 0.5).map(([k, v]) => `<span class="dchip" style="--dc:${RESOURCES[k].color}" title="${RESOURCES[k].name} ${fmtNum(Math.floor(v))} / ${fmtNum(gateHubCap(g))}">${RES_ICONS[k]}<b>${fmtNum(Math.floor(v))}</b></span>`).join('') || '<span class="bld locked" style="border:none;padding:0">暂无库存</span>'
+        : '';
+      inner += artBanner('img/stargate.jpg', `STARGATE · ${sysById(p.sysId).name}`, 88)
+        + `<div class="buff-line" style="color:var(--purple)">⌬ 星门运转中 —— ${eff}</div>
+        ${isHub ? `<div class="eco-sub" style="margin:.3rem 0">枢纽库存:${storeTxt}<br>列车停靠本星系任一星港锚地时,所有升级/建造可直接调用枢纽库存</div>` : `<div class="eco-sub" style="margin:.3rem 0">门仓:${Object.entries(g.store || {}).filter(([,v]) => v > 0.5).map(([k,v]) => `<span style="color:${RESOURCES[k].color}">${RESOURCES[k].name} ${fmtNum(Math.floor(v))}</span>`).join(' · ') || '空'}<br>收集圈内资源星产出(稀有优先)→ 接力输送至目标星门;开启本地分发则优先补给本系殖民地</div>`}
+        ${gateCtl}
+        <div style="display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.3rem">${ups}</div>`;
+    }
+  } else if (portDone(key)){
+    inner += `<div class="bld locked" style="margin-top:.35rem">⌬ 星门统一设于本系首星星港</div>`;
+  }
   const banner = portDone(key) ? artBanner('img/starport.jpg', `STARPORT · ${p.name}`, 96) : '';
-  return `<div class="divider"></div><div class="sec-label" style="--c:var(--cyan)">星港 · 自动航运</div>${banner}${inner}`;
+  return `<div class="divider"></div><div class="sec-label" style="--c:var(--cyan)">星港 · 自动航运 · 星门</div>${banner}${inner}`;
 }
+let _boostK = null, _boostAmt = 500;   // 加速面板选择状态(跨重渲染保留)
 function storeHtml(p){
   if (!save.est[p.key] || p.role !== 'hab') return '';
   const st = pstoreOf(p.key);
   const dk = demandOf(p);
   const items = Object.keys(RESOURCES).filter(k => (st[k] || 0) > 0.5 || k === dk)
-    .map(k => `<span style="color:${RESOURCES[k].color}">${RESOURCES[k].name} ${fmtNum(Math.floor(st[k] || 0))}${k === dk ? '(需求)' : ''}</span>`).join(' · ');
-  const active = boostActive(p);
-  const b = save.boost && save.boost[p.key];
-  const stateTxt = active ? `<b style="color:var(--green)">加速中(+${BOOST_GROWTH_PER_H*100}%/小时)${b === -1 ? ' · 永久' : ' · 剩余 ' + fmtDuration((b - Date.now())/1000)}</b>`
-    : (b && (st[dk]||0) <= 0 ? '<b style="color:var(--red)">需求资源耗尽,加速暂停</b>' : '');
-  const btns = BOOST_DURATIONS.map(([h, label]) => `<button data-boost="${h}" class="close-btn">${label}</button>`).join('');
+    .map(k => `<span style="color:${RESOURCES[k].color}">${RESOURCES[k].name} ${fmtNum(Math.floor(st[k] || 0))}${k === dk ? '(通商需求)' : ''}</span>`).join(' · ');
+  const run = boostRunOf(p);
+  const auto = save.boostAuto && save.boostAuto[p.key];
+  const autoBtn = `<button data-boost-auto="1" class="close-btn" style="${auto ? 'color:var(--green);border-color:rgba(62,207,142,.5)' : ''}" title="燃料耗尽自动续投:基础资源优先,保稀有给升级;需求资源只走金库不动仓">自动托管:${auto ? '开(有啥烧啥 · 基础优先)' : '关'}</button>`;
+  let boostUi;
+  if (run){
+    const rate = BOOST_TIER_RATE[RES_TIERS[run.k]];
+    const burn = boostBurnRate(p);
+    boostUi = `<div class="buff-line"><b style="color:var(--green)">人口加速中 +${rate*100}%/小时</b> —— ${RESOURCES[run.k].name} 余 ${fmtNum(Math.floor(run.left))}(约 ${fmtDuration(run.left / burn)})</div>
+      <div style="display:flex;gap:.4rem;margin-top:.4rem;flex-wrap:wrap">
+        <button id="boost-more" class="close-btn">追加 ${fmtNum(_boostAmt)}</button>
+        <button id="boost-stop" class="close-btn">停止(余量退回仓)</button>
+        ${autoBtn}
+      </div>`;
+  } else {
+    const availTotal = k => Math.floor((st[k] || 0) + availOf(k));
+    if (_boostK && availTotal(_boostK) <= 0) _boostK = null;
+    const chips = Object.keys(RESOURCES).map(k => {
+      const rate = BOOST_TIER_RATE[RES_TIERS[k]];
+      const have = availTotal(k);
+      const sel = _boostK === k;
+      return `<button data-bk="${k}" class="close-btn" style="${sel ? 'color:var(--cyan);border-color:rgba(34,211,238,.55)' : ''}" ${have > 0 ? '' : 'disabled'} title="可用 ${fmtNum(have)}(本仓+金库+枢纽)">${RESOURCES[k].name} +${rate*100}%</button>`;
+    }).join('');
+    const amts = BOOST_AMOUNTS.map(a =>
+      `<button data-ba="${a}" class="close-btn" style="${_boostAmt === a ? 'color:var(--cyan);border-color:rgba(34,211,238,.55)' : ''}">${fmtNum(a)}</button>`).join('');
+    const ok = _boostK && availTotal(_boostK) >= _boostAmt;
+    const eta = _boostK ? fmtDuration(_boostAmt / boostBurnRate(p)) : '';
+    boostUi = `<div class="buff-line">投入资源驱动人口加速 —— 越稀有越快:基础 +50% · 中级 +100% · 稀有 +200%(每小时)。人口推近承载上限 → 本星发展提速(最高 +40%),全银河总人口提升资源产能(劳动力红利)</div>
+      <div style="display:flex;gap:.35rem;margin-top:.4rem;flex-wrap:wrap">${chips}</div>
+      <div style="display:flex;gap:.35rem;margin-top:.35rem;flex-wrap:wrap;align-items:center">${amts}
+        <button id="boost-go" class="act-btn cyan" style="margin:0;padding:.42rem .9rem;width:auto" ${ok ? '' : 'disabled'}>确认加速${_boostK ? `(${RESOURCES[_boostK].name} ${fmtNum(_boostAmt)} · 约 ${eta})` : ''}</button>
+        ${autoBtn}
+      </div>`;
+  }
   return `<div class="eco-box">
-    <div class="eco-k">星球资源仓 · 需求:${RESOURCES[dk].name}</div>
+    <div class="eco-k">星球资源仓 · 通商需求:${RESOURCES[dk].name}</div>
     <div class="eco-sub" style="margin-top:.4rem">${items || '空'}</div>
-    <div class="buff-line">${stateTxt || '补给需求资源后启动加速:人口增速 +10%/小时,持续消耗仓内资源(星港航线可自动补给)'}</div>
+    <div class="eco-sub" style="margin-top:.25rem">仓内有需求资源 → 殖民地保持通商开发加成(星港航线自动补给)</div>
+    ${boostUi}
     <div style="display:flex;gap:.4rem;margin-top:.5rem;flex-wrap:wrap">
-      <button id="store-supply" class="close-btn" ${(save.treasury[dk]||0) >= 500 && dockedAtPlanet(p) ? '' : 'disabled'} title="需列车停靠本星">列车补给 500</button>
-      ${btns}
+      <button id="store-supply" class="close-btn" ${(save.treasury[dk]||0) >= 500 && dockedAtPlanet(p) ? '' : 'disabled'} title="需列车停靠本星">列车补给 500(${RESOURCES[dk].name})</button>
     </div></div>`;
 }
 function bindPortBtns(p){
@@ -361,9 +477,30 @@ function bindPortBtns(p){
       renderDevBlock();
     }
   });
-  document.querySelectorAll('[data-lup]').forEach(b => b.onclick = () => {
-    const i = +b.dataset.lup;
-    if (upgradeLine(i)){ showToast(`贸易线升级 → <b>LV${save.lines[i].lv}</b> · 单趟容量 ${SHIP_CAP * save.lines[i].lv}`, {sfx:'levelup', say:'Trade lane upgraded.'}); renderDevBlock(); }
+  const dk = document.querySelector('[data-dock]');
+  if (dk) dk.onclick = () => {
+    if (upgradeDock(p.key)){ showToast(`<b>${p.name}</b> 船坞升级 → LV${dockLvOf(p.key)} · 全部航线容量提升`, {sfx:'levelup', say:'Dock upgraded.'}); renderDevBlock(); }
+    else sfx('err');
+  };
+  const gb = document.querySelector('[data-gate-build]');
+  if (gb) gb.onclick = () => {
+    if (buildGate(p.sysId)){ showToast(`<b>${sysById(p.sysId).name}</b> 星门奠基 —— 跨星系物流即将贯通`, {sfx:'unlock', say:'Stargate under construction.'}); renderDevBlock(); }
+    else sfx('err');
+  };
+  document.querySelectorAll('[data-gate-collect]').forEach(b => b.onclick = () => {
+    const g = gateOf(p.sysId); if (!g) return;
+    g.collect = g.collect === 0 ? 1 : 0; persistSave(); sfx('blip'); renderDevBlock();
+  });
+  document.querySelectorAll('[data-gate-deliver]').forEach(b => b.onclick = () => {
+    const g = gateOf(p.sysId); if (!g) return;
+    g.deliver = g.deliver ? 0 : 1; persistSave(); sfx('blip'); renderDevBlock();
+  });
+  document.querySelectorAll('[data-gate-target]').forEach(sel => sel.onchange = () => {
+    const g = gateOf(p.sysId); if (!g) return;
+    g.target = sel.value || null; persistSave(); sfx('confirm'); renderDevBlock();
+  });
+  document.querySelectorAll('[data-gate-up]').forEach(b => b.onclick = () => {
+    if (upgradeGate(p.sysId, b.dataset.gateUp)){ showToast('星门升级完成', {sfx:'levelup', say:'Stargate upgraded.'}); renderDevBlock(); }
     else sfx('err');
   });
   document.querySelectorAll('[data-lsend]').forEach(sel => sel.onchange = () => {
@@ -376,11 +513,28 @@ function bindPortBtns(p){
     if (supplyStore(p, 500)){ showToast(`<b>${p.name}</b> 资源仓补给完成`, {sfx:'confirm', say:'Supplies delivered.'}); renderDevBlock(); }
     else sfx('err');
   };
-  document.querySelectorAll('[data-boost]').forEach(b => b.onclick = () => {
-    setBoost(p, +b.dataset.boost);
-    showToast(`<b>${p.name}</b> 资源加速已设定`, {sfx:'confirm', say:'Growth acceleration engaged.'});
+  document.querySelectorAll('[data-bk]').forEach(b => b.onclick = () => { _boostK = b.dataset.bk; sfx('blip'); renderDevBlock(); });
+  document.querySelectorAll('[data-ba]').forEach(b => b.onclick = () => { _boostAmt = +b.dataset.ba; sfx('blip'); renderDevBlock(); });
+  const bg = $('boost-go');
+  if (bg) bg.onclick = () => {
+    if (startBoostRun(p, _boostK, _boostAmt)){ showToast(`<b>${p.name}</b> 人口加速启动(+${BOOST_TIER_RATE[RES_TIERS[_boostK]]*100}%/小时)`, {sfx:'confirm', say:'Growth acceleration engaged.'}); renderDevBlock(); }
+    else sfx('err');
+  };
+  const bm = $('boost-more');
+  if (bm) bm.onclick = () => {
+    const r = boostRunOf(p);
+    if (r && startBoostRun(p, r.k, _boostAmt)){ showToast(`<b>${p.name}</b> 追加投入 ${fmtNum(_boostAmt)}`, {sfx:'confirm'}); renderDevBlock(); }
+    else sfx('err');
+  };
+  document.querySelectorAll('[data-boost-auto]').forEach(b => b.onclick = () => {
+    if (!save.boostAuto) save.boostAuto = {};
+    save.boostAuto[p.key] = save.boostAuto[p.key] ? 0 : 1;
+    persistSave(); sfx(save.boostAuto[p.key] ? 'confirm' : 'blip');
+    if (save.boostAuto[p.key]) showToast(`<b>${p.name}</b> 人口加速已托管 —— 燃料耗尽自动续投`, {say:'Automation engaged.'});
     renderDevBlock();
   });
+  const bs = $('boost-stop');
+  if (bs) bs.onclick = () => { if (stopBoostRun(p)){ showToast('加速已停止,余量退回资源仓', {sfx:'blip'}); renderDevBlock(); } };
 }
 
 /* ── 区划与建筑(紧凑图标布局,适配最多 36 区划) ── */
@@ -400,6 +554,17 @@ function districtsHtml(p){
     : (p.shader === 'rocky' && !p.moonOf ? '标准星球(火星类 · 可类地化)' : '标准星球(不可改造)');
   rows.push(`<div class="buff-line" style="margin:0 0 .55rem">环境 <b style="color:${envCol}">${env.name}</b> · ${bandTxt}${p.moonOf ? ' · <b style="color:var(--red)">卫星要冲(军工优先)</b>' : ''} —— ${env.note}<br><span style="display:inline-flex;align-items:center;gap:.15rem">可开辟:${allowed}</span> · 本星区划上限 <b style="color:${envCol}">${maxSlotsOf(p)}</b></div>`);
 
+  // 卫星港:随母星发展自动建立,作为额外区划并再分配产出
+  const _ms = moonsOf(p);
+  if (_ms.length){
+    const _act = activeMoonPorts(p);
+    const _mult = moonPortMult(p);
+    const _chips = _ms.map(m => {
+      const on = devLevel(p) >= m.unlockLv;
+      return `<span class="dchip" title="${MOON_SIZES[m.size].name} · ${on ? '卫星港已建立' : 'LV' + m.unlockLv + ' 时自动建港'} · +${m.slots} 区划" style="--dc:${on ? 'var(--cyan)' : 'var(--text-muted)'};${on ? '' : 'opacity:.55'}">${on ? '🛰' : '🌑'} ${m.name.split('-').pop()}<b>+${m.slots}</b></span>`;
+    }).join('');
+    rows.push(`<div class="buff-line" style="margin:0 0 .55rem">卫星港 <b style="color:var(--cyan)">${_act.length}/${_ms.length}</b> · 额外区划 +${moonPortSlots(p)}${p.role === 'res' ? ` · 产出合计 <b style="color:var(--cyan)">×${_mult.toFixed(2)}</b>` : ''}${_ms.length > 2 ? '(全港后母星 -10%)' : ''}<div class="dchip-row" style="margin-top:.3rem">${_chips}</div></div>`);
+  }
   // 已建成区划:按类型聚合为图标计数
   const counts = {};
   for (const dd of st.districts)
@@ -410,7 +575,7 @@ function districtsHtml(p){
   }).join('');
   const slots = unlockedSlots(p);
   rows.push(`<div class="dchip-row">${chips || '<span class="bld locked">尚无建成区划</span>'}</div>
-    <div class="bar-meta" style="margin-top:.35rem"><span>区划 ${st.districts.length} / ${slots} 已解锁</span><span>本星上限 ${maxSlotsOf(p)}</span></div>`);
+    <div class="bar-meta" style="margin-top:.35rem"><span>区划 ${st.districts.length} / ${slots} 已解锁</span><span>本星上限 ${maxSlotsOf(p)}${moonPortSlots(p) ? ' <b style="color:var(--cyan)">+' + moonPortSlots(p) + '🛰</b>' : ''}</span></div>`);
   // 居住承载触顶提示
   const hcap = habCapacityInfo();
   if (hcap.other + 1 > hcap.limit && st.districts.length < slots)
@@ -420,9 +585,12 @@ function districtsHtml(p){
   const act = activeConstruction(st);
   const domType = act ? act.type
     : Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([t]) => t)[0];
-  if (domType && DISTRICT_TYPES[domType])
-    rows.push(artBanner(`img/dist_${domType}.jpg`,
+  if (domType && DISTRICT_TYPES[domType]){
+    const envKey = domType + '_' + p.shader;
+    const distImg = DIST_ENV_ART.has(envKey) ? `img/dist_${envKey}.jpg` : `img/dist_${domType}.jpg`;
+    rows.push(artBanner(distImg,
       act ? `${DISTRICT_TYPES[domType].name} · UNDER CONSTRUCTION` : `${DISTRICT_TYPES[domType].name} ×${counts[domType]} · DISTRICT`, 96));
+  }
   if (act){
     const dt = DISTRICT_TYPES[act.type];
     rows.push(`<div class="bld building" style="margin-top:.45rem"><span class="dchip-ico" style="color:${dt.color}">${DIST_ICONS[act.type]}</span> ⚒ ${act.label} · ${(dProg(act.obj)*100).toFixed(0)}% · 剩余 ${fmtDuration(dRemain(act.obj))}${docked ? ' · 🚆商贸加速×2' : ''}</div>`);
@@ -699,13 +867,20 @@ function showToast(html, cue){
 
 /* ════════ 海盗基地进攻入口 ════════ */
 function pirateLabelClick(sysId){
-  if (!pirateAlive(sysId)){ sfx('err'); return; }
   const tr = save.train;
+  // 残骸场:回收物资(每趟受货舱限)
+  if (pirateWreckOf(sysId)){
+    if (tr.status !== 'docked' || tr.sys !== sysId || localTransit()){ showToast('列车需停靠本星系才能回收残骸', { sfx:'err' }); return; }
+    if (!salvageWreck(sysId)) sfx('err');
+    return;
+  }
+  if (!pirateAlive(sysId)){ sfx('err'); return; }
   if (tr.status !== 'docked' || tr.sys !== sysId || localTransit()){
     showToast('列车需停靠本星系,才能突入小行星带清剿海盗', { sfx:'err' });
     return;
   }
-  openBattle(sysId, true);
+  if (save.pirateRun && save.pirateRun[sysId]){ showToast('突击航线进行中 —— 接近基地时自动接敌', { sfx:'blip' }); return; }
+  startPirateRun(sysId);   // 飞向基地:途中可能遭拦截,抵达后开战
 }
 
 /* ════════ 剧本系统(事件绑定星球:讯号就绪 + 停靠对应星系才能接收) ════════ */
@@ -737,6 +912,51 @@ function questPendingList(){
   if (portStoryContentReady()) out.push({ track:'port', loc: questLocOf('port') });
   return out;
 }
+/* ── 指挥官简报:核心玩法一次性提示(条件首次满足时触发,绝不重复) ── */
+function briefTick(){
+  if (!save.hints) save.hints = {};
+  const H = (key, cond, msg, say) => {
+    if (save.hints[key] || !cond()) return;
+    save.hints[key] = 1;
+    showToast('📋 ' + msg, { sfx:'signal', say });
+    persistSave();
+  };
+  const cg = planetByKey('kenxi/canglan');
+  // 1. 收取:首次本星系有待收取资源且列车停靠
+  H('collect', () => save.train.status === 'docked' && planetsOf(save.train.sys).some(p => p.role === 'res' && resAvail(p) > 20),
+    '简报:本星系资源星已有产出 —— 打开行星面板点「装载本星系资源」,这是早期金库的主要来源',
+    'Resources ready for collection.');
+  // 2. 移民循环:首次迁移池可装载
+  H('migrate', () => cg && save.train.status === 'docked' && save.train.sys === 'kenxi' && migInfo(cg).pool >= 500,
+    '简报:沧澜迁移池已有志愿者 —— 「装载移民」上车,飞抵新行星后「落户」即可建立前哨,这是殖民循环的核心',
+    'Colonists awaiting boarding.');
+  // 3. 资源仓与人口加速:沧澜到自治市后点拨
+  H('boost', () => cg && devLevel(cg) >= 5,
+    '简报:行星面板的「星球资源仓」可投入资源驱动人口加速(越稀有越快),开启「自动托管」后完全免操心',
+    'Population acceleration available.');
+  // 4. 车厢科技:科研值首次够 LV2 研发
+  H('cartech', () => (save.research || 0) >= 250,
+    '简报:科研值可用于车厢改装方案 —— 列车面板选中车厢点「研发」,完成后全列同型车厢自动升级;也别忘了列车研发的五大科技',
+    'Refit research available.');
+  // 5. 车厢库:引擎 LV2 首次(解锁科研车厢建造)
+  H('depot', () => save.train.engineLv >= 2,
+    '简报:停靠有工业区划的类地行星可「建造车厢」入库(可选建造等级)并替换编组 —— 新车型随引擎等级逐步解锁',
+    'Car workshop available.');
+  // 6.5 贸易网第二节点:首港建成但同系无资源星港 → 指路建前哨
+  H('resport', () => {
+    const done = Object.keys(save.starport || {}).filter(k => portDone(k));
+    if (!done.length) return false;
+    const sysId = done[0].split('/')[0];
+    return !planetsOf(sysId).some(pl => pl.role === 'res' && save.est[pl.key]);
+  },
+    '简报:星港要成网才能运输 —— 列车停靠同星系的资源星建立「前哨」,它发展到殖民地级会自动建港,贸易线与自动补给随即贯通',
+    'Establish a resource outpost to link the trade network.');
+  // 6. 弹药:首次不满
+  H('ammo', () => save.train.ammo < ammoMax(),
+    '简报:弹药不满(列车面板有闪烁灯)—— 停靠建有军事区划的锚地会自动补满;武器越强耗弹越多',
+    'Ammunition running low.');
+}
+
 function questHintTick(){              // 新手提示:讯号源出现时播报一次"去哪接收"
   for (const q of questPendingList()){
     const idx = q.track === 'main' ? save.story.idx : q.track === 'side' ? save.side.idx : save.portStory.idx;
@@ -764,7 +984,25 @@ function applyScarChoice(ch, ci){
   applyChoiceFx(ch.choices[ci].fx || {});
   save.scar.idx++;
   save.scar.pending = false;
+  if (OFFICER_SCAR[save.scar.idx]) unlockOfficer(OFFICER_SCAR[save.scar.idx], '地疤残响');
+  // 地疤中期(第六弧·直线委员会读完):星门技术解锁,垦曦母港门自动开建
+  if (save.scar.idx >= 60 && !save.gateUnlocked){
+    unlockGates();
+    setTimeout(() => showToast('⌬ <b>星门技术解锁</b> —— 委员会的遗产:垦曦星门已自动开工,作用圈覆盖周边星系;远域物流需自建接力节点', { sfx:'unlock', say:'Stargate network initialized.' }), 1500);
+  }
   persistSave();
+}
+/* ── 拦截警报浮标:pendingRaid 预警窗口内显示倒计时,点击立即接敌 ── */
+function raidAlertTick(){
+  const el = $('raid-alert');
+  if (!el) return;
+  const pr = save.pendingRaid;
+  const active = pr && pr.openAt && Date.now() < pr.openAt && !battleOpen();
+  el.classList.toggle('show', !!active);
+  if (active){
+    const left = Math.ceil((pr.openAt - Date.now()) / 1000);
+    el.innerHTML = `⚠ 陨星拦截 · <b>${left}s</b> 后自动接敌 —— 点击立即出击`;
+  }
 }
 let prevSignal = '';
 function checkSignal(){
@@ -810,7 +1048,13 @@ function openStory(){
   card.classList.toggle('scar', scar);
   card.dataset.track = track;
   const art = track === 'port'
-    ? `<div class="art-banner" style="background-image:url('img/port_story.jpg');height:128px;margin:.2rem 0 .8rem"><span class="art-cap">CANGLAN ORBITAL STARPORT</span></div>` : '';
+    ? `<div class="art-banner" style="background-image:url('img/port_story.jpg');height:128px;margin:.2rem 0 .8rem"><span class="art-cap">CANGLAN ORBITAL STARPORT</span></div>`
+    : track === 'side'
+    ? `<div class="art-banner" style="background-image:url('img/solaris_story.jpg');height:128px;margin:.2rem 0 .8rem"><span class="art-cap">BENEATH THE ICE · LINYUAN</span></div>`
+    : track === 'scar'
+    ? `<div class="art-banner" style="background-image:url('img/scar_story.jpg');height:118px;margin:.2rem 0 .8rem"><span class="art-cap">THE SCAR · ORBITAL SURVEY</span></div>`
+    : track === 'main'
+    ? `<div class="art-banner" style="background-image:url('img/dawnship.jpg');height:118px;margin:.2rem 0 .8rem"><span class="art-cap">THE SEED SHIP · 400-YEAR VOYAGE</span></div>` : '';
   card.innerHTML = `
     <div class="chapno">${String(state.idx + 1).padStart(scar ? 3 : 2, '0')} <span style="opacity:.5">/</span> ${String(book.length).padStart(2, '0')}</div>
     ${art}
@@ -826,19 +1070,50 @@ function openStory(){
   $('story-overlay').classList.add('show');
   $('signal-btn').classList.remove('show');
   sfx('open');
+  // 剧情卡语音:仅锚点/终章播特制英文广播腔(全游戏统一音色),其余静默
+  const special = (QUEST_CARD_SAY[track] || {})[state.idx];
+  if (special) speak(special);
   tickBlueprintLayer();
 }
+/* 锚点章 / 终章特制语音 */
+const QUEST_CARD_SAY = {
+  main: { 0:'Awakening sequence complete.', 2:'First signal received.', 6:'A voice beneath the ice.',
+          10:'The truth of the exodus.', 14:'A lullaby from Earth.', 18:'The voyager passes.',
+          21:'The last song of Earth.', 25:'A new song begins.' },
+  side: { 0:'The ocean is mimicking us.', 8:'The symmetrical sea.' },
+  port: { 0:'The iron dock.', 2:'Trade arteries open.' },
+  scar: { 59:'The committee disbands.', 119:'The scar remains. So do we.' },
+};
 function resolveStory(ch, ci, track){
   const choice = ch.choices[ci];
   if (track === 'main'){
     applyStoryChoice(ch, ci);
     // 事件推进 → 新手小行星战:碎石群切入沧澜轨道
+    // 船官:主线里程碑入列
+    if (track === 'main' && OFFICER_STORY[save.story.idx]) unlockOfficer(OFFICER_STORY[save.story.idx], '主线剧情');
+    if (track === 'side' && save.side && save.side.idx >= SIDE_STORY.length) unlockOfficer(OFFICER_SIDE_DONE, '《索拉里斯之海》终章');
+    if (track === 'port' && save.portStory && save.portStory.idx >= PORT_STORY.length) unlockOfficer(OFFICER_PORT_DONE, '《钢铁码头》完结');
     const tut = TUT_RAIDS[save.story.idx];
     if (tut && !save.tutRaids[save.story.idx]){
       save.tutRaids[save.story.idx] = 1;
-      save.pendingRaid = { sysId:'kenxi', at: Date.now(), tutorial: tut.stage };
+      save.pendingRaid = { sysId:'kenxi', at: Date.now(), tutorial: tut.stage, openAt: Date.now() + 20000 };
       persistSave();
-      setTimeout(() => showToast('⚠ 航道警报:一群脱轨陨星正切入沧澜轨道 —— 拦截它们,残骸归你', { sfx:'err', say:'Debris field inbound.' }), 1200);
+      // 20 秒预警窗口:警报浮标可点击立即接敌,倒计时耗尽自动进入
+      setTimeout(() => showToast('⚠ 深空雷达回波:脱轨陨星切入沧澜轨道 —— 点击屏幕下方警报浮标立即拦截,或 20 秒后自动接敌', { sfx:'err', say:'Debris field inbound.' }), 1200);
+      setTimeout(() => { if (save.pendingRaid && save.pendingRaid.tutorial) showToast('武器系统预热完毕 —— 拦截后残骸归我们(金属·化合物·科研值)', { sfx:'blip', say:'Weapons hot. Standing by.' }); }, 9000);
+    }
+    // 事件推进 → 晨昏号移交火种舱(共 3 节,保障跨星系殖民不被科技卡死)
+    if (CRYO_GIFTS[save.story.idx] && !save.cryoGifts[save.story.idx]){
+      save.cryoGifts[save.story.idx] = 1;
+      const nc = { type:'cryo', clv:1 };
+      let where;
+      if (carCount() < carSlots()){ save.train.cars.push(nc); where = '已挂入编组'; }
+      else {
+        if (!save.depot['kenxi/canglan']) save.depot['kenxi/canglan'] = [];
+        save.depot['kenxi/canglan'].push(nc); where = '存入沧澜车厢库';
+      }
+      persistSave();
+      setTimeout(() => showToast(`晨昏号移交一节<b>休眠舱(火种)</b> —— ${where}。无人星系的第一块殖民地由它建立`, { sfx:'unlock', say:'Seed vault transferred.' }), 2200);
     }
   }
   else if (track === 'side') applySideChoice(ch, ci);
@@ -1010,6 +1285,11 @@ function tickUI(){
   tickQueues();
   portTick();
   questHintTick();
+  briefTick();
+  boardingTick();
+  pirateRunTick();
+  raidAlertTick();
+  thrusterTick(save.train.status === 'travel' || localTransit());
   updateDistrictUniforms();
 
   // 星系内停靠 / 弹药补给
@@ -1026,13 +1306,14 @@ function tickUI(){
   if (arrival){
     let msg = `列车已抵达 <b>${arrival.sys.name}</b>`;
     if (arrival.firstVisit) msg += ' · 星图已解锁';
-    showToast(msg, {sfx:'levelup', say:'Arrival confirmed.'});
+    showToast(msg, {sfx:'levelup', say: arrival.firstVisit ? 'New system charted.' : 'Arrival confirmed.'});
     if (arrival.raidPending) setTimeout(() => openBattle(arrival.sys.id), 1300);
     if (mode === 'galaxy'){ refreshDock(); if (panelSys) renderSysPanel(); }
     if ($('train-overlay').classList.contains('show')) renderTrainCard();
   }
   // 离线期间抵达留下的未决遭遇战:本次会话首次自动弹出
-  if (save.pendingRaid && !battleAutoOpened && !battleOpen()){
+  if (save.pendingRaid && !battleAutoOpened && !battleOpen()
+      && (!save.pendingRaid.openAt || Date.now() >= save.pendingRaid.openAt)){
     battleAutoOpened = true;
     openBattle(save.pendingRaid.sysId);
   }
@@ -1093,4 +1374,40 @@ function tickUI(){
   if (panelPlanet) renderDevBlock();
   if (panelSys && mode === 'galaxy' && save.train.status === 'travel') renderSysPanel();
   if ($('train-overlay').classList.contains('show')) refreshTrainDynamic();
+}
+
+
+/* ════════ 银河总图:星系 hover 预览缩略图(复用 5 类星球图) ════════ */
+function showSysPreview(sysId, el){
+  const box = $('sys-preview');
+  if (!box) return;
+  const sys = sysById(sysId);
+  const ps = planetsOf(sysId);
+  const sig = ps.find(x => x.shader === 'terra' && !x.moonOf) || ps.find(x => x.role === 'hab' && !x.moonOf) || ps[0];
+  const visited = !!save.visited[sysId];
+  const planets = ps.filter(x => !x.moonOf);
+  const hab = planets.filter(x => x.role === 'hab').length;
+  const moons = ps.filter(x => x.moonOf).length + planets.reduce((s, x) => s + moonsOf(x).length, 0);
+  const rg = REGIONS[regionOf(sys)];
+  const rgCol = rg.name === '安全区' ? 'var(--green)' : rg.name === '近域' ? 'var(--cyan)' : rg.name === '边域' ? 'var(--amber)' : 'var(--red)';
+  const bias = sys.bias && sys.bias !== 'hab' && RESOURCES[sys.bias] ? `特产 ${RESOURCES[sys.bias].name}` : sys.bias === 'hab' ? '宜居偏向' : '';
+  const belt = typeof beltOf === 'function' && beltOf(sys) ? ' · 小行星带' : '';
+  box.innerHTML = `<div class="spv-img${visited ? '' : ' unk'}" style="background-image:url('${planetArtOf(sig)}')">${visited ? '' : '<span class="spv-unk">未 勘 测</span>'}</div>
+    <div class="spv-body">
+      <div class="spv-name">${sys.name}<span>${sys.en || ''}</span></div>
+      <div class="spv-meta"><b style="color:${rgCol}">${rg.name}</b> · ${sys.star || '恒星系'}${belt}</div>
+      <div class="spv-meta">${visited
+        ? `行星 ${planets.length} · 卫星 ${moons} · 宜居 ${hab} · 资源 ${planets.length - hab}${bias ? ' · ' + bias : ''}`
+        : `行星 ${planets.length} · 抵达后解锁勘测详情`}</div>
+    </div>`;
+  const r = el.getBoundingClientRect();
+  let x = r.right + 14, y = r.top - 36;
+  if (x + 240 > innerWidth) x = r.left - 248;
+  y = Math.max(56, Math.min(innerHeight - 190, y));
+  box.style.left = x + 'px'; box.style.top = y + 'px';
+  box.classList.add('show');
+}
+function hideSysPreview(){
+  const box = $('sys-preview');
+  if (box) box.classList.remove('show');
 }
