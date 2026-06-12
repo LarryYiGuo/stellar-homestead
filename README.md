@@ -1,10 +1,10 @@
-# Stellar Homestead · 星垦
+# Stellar Homestead · 星垦·银河纪元
 
 **🎮 Play online / 在线试玩: [larryyiguo.github.io/stellar-homestead](https://larryyiguo.github.io/stellar-homestead/)**
 
 A 3D idle space-colony game with an upgradeable interstellar train and turn-based deck-building battles, built as a single-page Three.js app — no build step, nothing to install.
 
-一款 3D 太空殖民放置养成游戏:可扩编的星际列车 + 回合制卡组战斗。纯前端 Three.js 单页应用,无需构建。
+星垦·银河纪元 —— 3D 银河殖民放置养成 + 星际列车卡组战斗。纯前端 Three.js 单页应用,无需构建、零安装,双击即玩。你是这个文明的见证者、体验者,也是创造者。
 
 📖 Gameplay guide / 玩法说明 → **[GAMEPLAY.md](GAMEPLAY.md)**
 

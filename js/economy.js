@@ -28,9 +28,11 @@ function devNorm(p){                    // 0~1,驱动夜面灯光强度
   return (lv - 1 + devProgress(p)) / MAX_LEVEL + 0.12;
 }
 
-/* ── 解锁条件(垦曦手作行星专用;远征行星另有列车驻留规则) ── */
-function condList(p){
-  const conds = (p.unlock || []).map(c => {
+/* ── 解锁条件 ──
+   硬条件(剧情/等级等)决定"🔒未解锁";满足后即显示"可建立",
+   后勤条件(停靠/移民/承载)只影响建立按钮 */
+function hardCondList(p){
+  return (p.unlock || []).map(c => {
     if (c.story !== undefined)
       return { met: save.story && save.story.idx >= c.story, text: `完成主线「${STORY[c.story-1].title}」章节` };
     if (c.planetLv){
@@ -45,16 +47,27 @@ function condList(p){
     }
     return { met:true, text:'' };
   });
-  // 远征星球:需要列车驻留本星系才能施工
-  if (p.remote){
-    conds.push({
-      met: save.train.status === 'docked' && save.train.sys === p.sysId,
-      text: '星际列车驻留本星系(运送施工队)',
-    });
-  }
+}
+function condList(p){
+  const conds = hardCondList(p);
+  // 建立殖民地的后勤条件:列车停靠本星轨道 + 随车移民 + 居住承载
+  conds.push({
+    met: dockedAtPlanet(p),
+    text: '星际列车停靠本星轨道(卫星/母星泊位通用)',
+  });
+  conds.push({
+    met: save.train.pax >= ESTABLISH_COLONISTS,
+    text: `随车移民 ≥ ${fmtNum(ESTABLISH_COLONISTS)}(当前 ${fmtNum(save.train.pax)})`,
+  });
+  const cap = habCapacityInfo();
+  conds.push({
+    met: cap.ok,
+    text: `居住承载:非居住区划 ${cap.other} ≤ 居住区划×2(${cap.limit})`,
+  });
   return conds;
 }
 function isUnlocked(p){ return condList(p).every(c => c.met); }
+function hardUnlocked(p){ return hardCondList(p).every(c => c.met); }   // 仅差后勤 → "可建立"
 
 /* ── 协同加成(全银河) ── */
 function sumLevels(role){
@@ -67,35 +80,49 @@ function sumLevelsAll(){
   for (const p of allPlanets()) s += devLevel(p);
   return s;
 }
-function capBuff(){ return (1 + 0.08 * sumLevels('res')) * (save.story ? save.story.buffs.cap : 1); }
-function rateBuff(){ return (1 + 0.12 * sumLevels('hab')) * (save.story ? save.story.buffs.rate : 1); }
+function capBuff(){ return 1 + 0.08 * sumLevels('res'); }
+function rateBuff(){ return 1 + 0.12 * sumLevels('hab'); }
+/* 剧情《来自地球的歌》的人口/产率加成仅作用于垦曦全系(初始星系) */
+function storyCap(p){ return p.sysId === 'kenxi' && save.story ? save.story.buffs.cap : 1; }
+function storyRate(p){ return p.sysId === 'kenxi' && save.story ? save.story.buffs.rate : 1; }
 
 function popOf(p){
   if (p.role !== 'hab') return 0;
   const lv = devLevel(p);
   if (lv === 0) return 0;
-  const prog = devProgress(p);
-  const a = POP_MILESTONES[lv], b = POP_MILESTONES[lv+1];
-  return a * Math.pow(b/a, prog) * p.capScale * capBuff() * colonyCap(p);
+  const extra = (save.popExtra && save.popExtra[p.key]) || 0;   // 迁入/迁出的人口偏移
+  const mult = p.capScale * capBuff() * colonyCap(p) * storyCap(p);
+  let base;
+  if (lv >= MAX_LEVEL){
+    // 环境承载力:最终阶段渐近逼近上限,越接近增长越慢
+    const a = POP_MILESTONES[MAX_LEVEL], b = POP_MILESTONES[MAX_LEVEL + 1];
+    const tIn = Math.max(0, devPoints(p) - LEVELS[MAX_LEVEL].th);
+    base = b - (b - a) * Math.exp(-tIn / 250000);
+  } else {
+    const prog = devProgress(p);
+    const a = POP_MILESTONES[lv], bb = POP_MILESTONES[lv+1];
+    base = a * Math.pow(bb/a, prog);
+  }
+  return Math.max(0, base * mult + extra);
 }
 function popCapOf(p){
   if (p.role !== 'hab') return 0;
   const lv = devLevel(p);
   if (lv === 0) return 0;
-  return POP_MILESTONES[lv+1] * p.capScale * capBuff() * colonyCap(p);
+  return POP_MILESTONES[lv+1] * p.capScale * capBuff() * colonyCap(p) * storyCap(p);
 }
 function resOf(p){                       // 累计产出(含已收取部分)
   if (p.role !== 'res') return 0;
   const lv = devLevel(p);
   if (lv === 0) return 0;
-  const rich = p.res.rich * colonyProd(p);
+  const rich = p.res.rich * colonyProd(p) * storyRate(p);
   if (lv >= MAX_LEVEL){
     const extra = Math.max(0, devPoints(p) - LEVELS[MAX_LEVEL].th) * RES_RATE_MAX;
-    return (RES_MILESTONES[MAX_LEVEL] + extra) * rich * rateBuff();
+    return (RES_MILESTONES[MAX_LEVEL] + extra) * rich * rateBuff() * RES_SCALE;
   }
   const prog = devProgress(p);
   const a = RES_MILESTONES[lv], b = RES_MILESTONES[lv+1];
-  return a * Math.pow(b/a, prog) * rich * rateBuff();
+  return a * Math.pow(b/a, prog) * rich * rateBuff() * RES_SCALE;
 }
 function resRateOf(p){
   if (p.role !== 'res' || devLevel(p) === 0) return 0;

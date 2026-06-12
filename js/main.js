@@ -18,6 +18,10 @@ async function init(){
     if (save.pendingRaid) openBattle(save.pendingRaid.sysId);   // 未决遭遇战优先
     else openTrain();
   };
+  $('train-tag').onclick = () => {
+    if (save.pendingRaid) openBattle(save.pendingRaid.sysId);
+    else openTrain();
+  };
   $('set-btn').onclick = (e) => { e.stopPropagation(); openSettings(); };
 
   MUSIC.wantOn = save.bgm !== false;

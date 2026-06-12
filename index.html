@@ -5,17 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>星垦 · Stellar Homestead — 银河纪元</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/main.css?v=10">
+<link rel="stylesheet" href="css/main.css?v=41">
 </head>
 <body>
 
 <div id="loader">
   <div class="star-pulse"></div>
+  <h1 class="ld-title">星垦 · 银河纪元</h1>
+  <div class="ld-sub">见 证 · 体 验 · 创 造</div>
   <p>正在生成银河 · Generating Galaxy</p>
 </div>
 
 <div id="canvas-wrap"></div>
 <div id="labels"></div>
+<div id="train-tag" class="hidden"></div>
+<div id="quest-tags"></div>
+<div id="bp-layer" class="hidden"></div>
 
 <header id="topbar">
   <div class="sys-name"><span id="loc-name">银河系</span><span class="en" id="loc-en">GALAXY</span></div>
@@ -24,6 +29,7 @@
       <div class="stat"><div class="lbl" id="civ-tier">文明指数</div><div class="val" id="civ-index">0.00</div></div>
       <div class="stat"><div class="lbl">总人口</div><div class="val dim" id="pop-total">0</div></div>
       <div class="stat"><div class="lbl">科研值</div><div class="val" id="rp-total" style="color:var(--cyan)">0</div></div>
+      <div class="stat"><div class="lbl">影响力</div><div class="val" id="inf-total" style="color:var(--purple)">0</div></div>
       <div class="stat"><div class="lbl">已开发</div><div class="val dim" id="dev-count">0</div></div>
     </div>
     <button id="galaxy-btn" title="银河系总图">
@@ -60,17 +66,18 @@
 <div id="battle-overlay"><div id="battle-card"></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="js/data.js?v=10"></script>
-<script src="js/save.js?v=10"></script>
-<script src="js/economy.js?v=10"></script>
-<script src="js/train.js?v=10"></script>
-<script src="js/colony.js?v=10"></script>
-<script src="js/shaders.js?v=10"></script>
-<script src="js/render.js?v=10"></script>
-<script src="js/ui.js?v=10"></script>
-<script src="js/trainui.js?v=10"></script>
-<script src="js/battle.js?v=10"></script>
-<script src="js/audio.js?v=10"></script>
-<script src="js/main.js?v=10"></script>
+<script src="js/data.js?v=41"></script>
+<script src="js/save.js?v=41"></script>
+<script src="js/economy.js?v=41"></script>
+<script src="js/train.js?v=41"></script>
+<script src="js/colony.js?v=41"></script>
+<script src="js/port.js?v=41"></script>
+<script src="js/shaders.js?v=41"></script>
+<script src="js/render.js?v=41"></script>
+<script src="js/ui.js?v=41"></script>
+<script src="js/trainui.js?v=41"></script>
+<script src="js/battle.js?v=41"></script>
+<script src="js/audio.js?v=41"></script>
+<script src="js/main.js?v=41"></script>
 </body>
 </html>

@@ -21,20 +21,42 @@ function mkEnemy(tid, i, rg){
     affix: null, intent: null, stunned: false, negated: false,
   };
 }
-function openBattle(sysId){
+function openBattle(sysId, pirate){
   if (B && B.sys.id === sysId && B.phase !== 'done'){   // 续战
     $('battle-overlay').classList.add('show');
+    musicBattle(true, !!B.boss);
     renderBattle();
     return;
   }
   const sys = sysById(sysId);
-  const rg = REGIONS[regionOf(sys)];          // 星图区域决定敌人强度
-  if (!rg.hpS) return;                        // 安全区无战斗
-  const isBoss = !!(save.pendingRaid && save.pendingRaid.boss) && !!BOSSES[sysId];
+  const tutorial = !pirate && save.pendingRaid && save.pendingRaid.tutorial;   // 新手战:脱轨陨星
+  const rg = tutorial ? { name:'碎石带', ...TUT_SCALE } : REGIONS[regionOf(sys)];
+  if (!rg.hpS) return;                        // 安全区无战斗(新手战除外)
+  const isBoss = !pirate && !tutorial && !!(save.pendingRaid && save.pendingRaid.boss) && !!BOSSES[sysId];
   const h = Math.min(6, Math.max(1, sys.hazard));
 
   let enemies = [], boss = null;
-  if (isBoss){
+  if (tutorial){
+    const conf = Object.values(TUT_RAIDS).find(t => t.stage === tutorial) || TUT_RAIDS[2];
+    enemies = conf.comp.map((tid, i) => {
+      const t = TUT_ENEMIES[tid];
+      const jit = 0.9 + Math.random() * 0.2;
+      return { tid, icon: t.icon, prefer: t.prefer, name: t.name + '-' + String.fromCharCode(65 + i),
+        hp: Math.round(t.hp * rg.hpS * jit), maxHp: Math.round(t.hp * rg.hpS * jit),
+        atk: Math.round(t.atk * rg.atkS) || 1,
+        affix: null, intent: null, stunned: false, negated: false };
+    });
+  } else if (pirate){
+    // 小行星带海盗基地:固定火力平台 + 危险度编队护卫
+    const bhp = Math.round(260 * rg.hpS + firepower() * 2);
+    enemies = [{
+      tid:'pbase', icon:'☠', prefer:'weapon', isBase:true,
+      name:'海盗基地 · 火力平台',
+      hp: bhp, maxHp: bhp,
+      atk: Math.round(16 * rg.atkS),
+      affix: null, intent: null, stunned: false, negated: false,
+    }, ...RAID_COMPS[h].slice(0, 3).map((tid, i) => mkEnemy(tid, i, rg))];
+  } else if (isBoss){
     boss = BOSSES[sysId];
     const bhp = Math.round(boss.hpBase * rg.hpS * 0.7 + firepower() * 3);
     const bu = {
@@ -60,15 +82,16 @@ function openBattle(sysId){
   }
   const hpS = battleHpScale();                // 车厢耐久随引擎成长
   const cars = save.train.cars.map((c, idx) => {
-    const mh = Math.round(CAR_HP[c.type] * hpS);
+    const mh = Math.round((CAR_HP[c.type] || 80) * hpS);
     return {
-      idx, type: c.type, wid: c.wid || null, wlv: c.wlv || 0,
+      idx, type: c.type, wid: c.wid || null, wlv: c.wlv || 0, clv: c.clv || 1,
+      paxMode: !!c.paxMode,
       maxHp: mh, hp: c.damaged ? 0 : mh,
       down: !!c.damaged, immune: false,
     };
   });
   B = {
-    sys, boss, region: rg, round: 1, maxRounds: isBoss ? 12 : BATTLE_MAX_ROUNDS,
+    sys, boss, pirate: !!pirate, tutorial: tutorial || 0, region: rg, round: 1, maxRounds: isBoss ? 12 : BATTLE_MAX_ROUNDS,
     phase: 'plan', enemies, cars,
     value: enemies.reduce((s, e) => s + e.maxHp + e.atk * 4, 0),
     drawPile: shuffle(save.deck.slice()), discardPile: [], hand: [], exhausted: [],
@@ -77,12 +100,19 @@ function openBattle(sysId){
   };
   if (isBoss) blog(boss.intro);
   blog(isBoss ? `⚠ 旗舰级目标:${boss.name} —— ${boss.skillText}`
+    : tutorial ? `一群脱轨陨星切入沧澜轨道 —— ${enemies.length} 个目标,武器系统这就有了用武之地。击毁后残骸归我们。`
+    : pirate ? `逼近 ${sys.name} 小行星带深处的海盗巢穴 —— 基地火力平台与 ${enemies.length - 1} 艘护卫上线`
     : `遭遇 ${sys.name} 空域的袭击者舰队 —— ${enemies.length} 个目标进入射程`);
   newPlanPhase(true);
   drawIntents();
   $('battle-overlay').classList.add('show');
+  musicBattle(true, isBoss);
   renderBattle();
-  sfx('err'); speak(isBoss ? 'Capital-class hostile detected.' : 'Hostiles detected. Battle stations.');
+  sfx('err'); speak(isBoss ? 'Capital-class hostile detected.'
+    : tutorial ? 'Debris field ahead. Weapons hot.'
+    : pirate ? 'Pirate stronghold in range. Weapons free.'
+    : 'Hostiles detected. Battle stations.');
+  tickBlueprintLayer();
 }
 
 function newPlanPhase(first){
@@ -231,7 +261,7 @@ function applyCard(cid, ti){
     case 'missilerain': {
       for (const car of B.cars){
         if (car.type !== 'weapon' || car.wid !== 'missile' || car.down) continue;
-        const dmg = Math.round(WEAPONS.missile.fp * car.wlv * 1.2 * (1 + 0.08 * techLv('fire')));
+        const dmg = Math.round(WEAPONS.missile.fp * car.wlv * carEffOf(car.clv) * 1.2 * (1 + 0.08 * techLv('fire')));
         for (const e of aliveEnemies()) hitEnemy(e, dmg, '全弹发射');
       }
       break; }
@@ -318,12 +348,18 @@ function enemyAttackStep(e){
     hitCar(tCar, Math.round(e.atk * buff * B.fx.shieldMult), e.name);
   };
 }
+function battleCarArmed(car){
+  return (car.type === 'weapon' || car.type === 'general') && car.wid && !car.paxMode;
+}
 function weaponFireStep(car){
   return () => {
-    if (car.down || car.type !== 'weapon' || !car.wid || !aliveEnemies().length) return;
+    if (car.down || !battleCarArmed(car) || !aliveEnemies().length) return;
     const w = WEAPONS[car.wid];
     const mode = WEAPON_BATTLE[car.wid].mode;
-    const base = w.fp * car.wlv;
+    let base = w.fp * car.wlv * carEffOf(car.clv);   // 车厢等级提升火力
+    // 弹药:有弹 -1 发;打空后应急弹药,伤害减半
+    if (save.train.ammo > 0) save.train.ammo--;
+    else { base *= 0.5; blog(`「${carLabel(car)}」弹药耗尽 —— 应急弹药,威力减半`); }
     const target = () => {
       const foc = B.fx.focusIdx !== null ? B.enemies[B.fx.focusIdx] : null;
       if (foc && foc.hp > 0) return foc;
@@ -367,12 +403,12 @@ function startRound(){
   const steps = [];
   // 1. 迅捷敌舰抢先行动
   for (const e of B.enemies) if (e.affix === 'swift') steps.push(enemyAttackStep(e));
-  // 2. 列车武器开火
-  for (const car of B.cars) if (car.type === 'weapon') steps.push(weaponFireStep(car));
+  // 2. 列车武器开火(武器平台 + 武装通用车厢;载人模式不参战)
+  for (const car of B.cars) if (battleCarArmed(car)) steps.push(weaponFireStep(car));
   // 3. 过载自损
   if (B.fx.overload) steps.push(() => {
     for (const car of B.cars){
-      if (car.type !== 'weapon' || !car.wid || car.down) continue;
+      if (!battleCarArmed(car) || car.down) continue;
       car.hp = Math.max(0, car.hp - Math.round(car.maxHp * 0.1));
       if (car.hp <= 0){ car.down = true; blog(`⚠ 「${carLabel(car)}」过载烧毁,瘫痪!`); }
     }
@@ -502,6 +538,20 @@ function finishBattle(result){
   }
   if (dmgCount) summary += `;${dmgCount} 节车厢受损待修`;
 
+  if (result === 'victory') addInfluence(INF_FX.victory);   // 武威影响力
+  if (B.tutorial && result === 'victory'){                  // 残骸回收:矿物 + 科研值
+    const lt = TUT_LOOT[B.tutorial] || TUT_LOOT[1];
+    save.treasury.metal = (save.treasury.metal || 0) + lt.metal;
+    save.treasury.chem = (save.treasury.chem || 0) + lt.chem;
+    save.research = (save.research || 0) + lt.rp;
+    summary += `;残骸回收:稀有金属 +${fmtNum(lt.metal)} · 化合物 +${fmtNum(lt.chem)} · 科研值 +${fmtNum(lt.rp)}`;
+  }
+  if (B.pirate && result === 'victory'){                    // 基地被毁:10-30 分钟后易地重建
+    const delay = Math.round(PIRATE_RESPAWN_MIN + Math.random() * (PIRATE_RESPAWN_MAX - PIRATE_RESPAWN_MIN));
+    save.pirates[sys.id] = Date.now() + delay * 1000;
+    addInfluence(INF_FX.victory);                           // 清剿巢穴双倍武威
+    summary += `;基地化为残骸,残党将在 ${fmtDuration(delay)} 后于带内重建`;
+  }
   if (isBoss && result === 'victory'){
     save.bossKills[sys.id] = true;
     if (sys.id === 'terminus')
@@ -510,10 +560,15 @@ function finishBattle(result){
       summary += '。守望者解体的瞬间,第一站台的灯光次第亮起——它等的也许从来不是敌人。';
   }
 
-  delete save.pendingRaid;
-  pushLog(`${sys.name} ${isBoss ? 'Boss 战' : '遭遇战'}(第 ${B.round} 回合):${summary}`);
+  if (!B.pirate) delete save.pendingRaid;   // 主动清剿不消耗挂起的遭遇战
+  pushLog(`${sys.name} ${isBoss ? 'Boss 战' : B.pirate ? '清剿海盗基地' : B.tutorial ? '陨星拦截' : '遭遇战'}(第 ${B.round} 回合):${summary}`);
   persistSave();
   blog('—— 战斗结束 ——');
+  speak(result === 'victory' ? (isBoss ? 'Capital ship destroyed. Outstanding, Commander.' : B.pirate ? 'Stronghold eliminated.' : 'Hostiles neutralized.')
+    : result === 'escape' ? 'Emergency disengage complete.'
+    : result === 'withdraw' ? 'We held the line.'
+    : 'Disengaged. Damage report incoming.');
+  musicBattle(false);
   renderBattle();
   if (typeof tickUI === 'function') tickUI();
 }

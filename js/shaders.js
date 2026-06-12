@@ -125,21 +125,74 @@ void main(){
     col += vec3(1.0, 0.78, 0.45) * cities * night * uDev * 1.6;
   }
 
-  // ── 殖民区划:圈定在星球表面的功能分区 ──
+  // ── 殖民区划:数据可视化风格 ──
+  // 核心区划(0 号):精密双环 + 旋转刻度环 + 脉冲核心
+  // 其余区划:不规则多边形色块(省份感)+ 闪烁亮芯 + 流光弧线汇聚核心
+  float night = 1.0 - dayMix;
+  float vis = 0.55 + 0.45*night;                 // 夜面更醒目(数据灯光感)
   for (int i = 0; i < 20; i++){
     float rr = uDistR[i];
     if (rr < 0.01) continue;
-    float ang = acos(clamp(dot(P, uDistDir[i]), -1.0, 1.0));
-    float ring = smoothstep(rr*1.12, rr, ang) * (1.0 - smoothstep(rr, rr*0.88, ang));
-    float fillm = 1.0 - smoothstep(rr*0.9, rr, ang);
+    vec3 D = uDistDir[i];
     vec3 dc = uDistCol[i];
-    if (uDistProg[i] >= 1.0){
-      col = mix(col, dc, fillm * 0.09);                       // 建成:淡色填充
-      col += dc * ring * 0.5 * (0.4 + 0.6*dayMix);            // + 实心环
+    float ang = acos(clamp(dot(P, D), -1.0, 1.0));
+    float prog = uDistProg[i];
+    float sd = float(i)*7.31 + uSeed;
+
+    // 连接线:区划 → 核心区划(沿星球表面的大圆弧,光脉冲流向核心)
+    if (i > 0 && uDistR[0] > 0.01 && prog >= 1.0){
+      vec3 Bv = uDistDir[0];
+      vec3 Nn = normalize(cross(D, Bv) + vec3(1e-5));
+      float dLine = abs(dot(P, Nn));
+      float segA = step(0.0, dot(cross(D, P), Nn));
+      float segB = step(0.0, dot(cross(P, Bv), Nn));
+      float line = smoothstep(0.014, 0.0, dLine) * segA * segB;
+      if (line > 0.0){
+        float angAB = max(acos(clamp(dot(D, Bv), -1.0, 1.0)), 1e-3);
+        float s = acos(clamp(dot(P, D), -1.0, 1.0)) / angAB;
+        float flow = smoothstep(0.32, 0.0, abs(fract(s*2.5 - uTime*0.35 + sd) - 0.5));
+        col += mix(dc, vec3(0.75,0.85,1.0), 0.45) * line * (0.16 + 0.75*flow) * vis;
+      }
+    }
+    if (ang > rr*1.7) continue;
+
+    if (i == 0){
+      // ── 核心殖民地:同心双环 + 旋转刻度 ──
+      vec3 T1 = normalize(cross(D, vec3(0.0,1.0,0.0)) + vec3(1e-4,0.0,0.0));
+      vec3 T2 = cross(D, T1);
+      float phi = atan(dot(P,T2), dot(P,T1));
+      float r1 = abs(ang - rr*0.92);
+      float r2 = abs(ang - rr*0.55);
+      float ticks = step(0.25, 0.5 + 0.5*sin(phi*14.0 + uTime*0.9));     // 旋转刻度环
+      float ring1 = smoothstep(rr*0.08, 0.0, r1) * ticks;
+      float ring2 = smoothstep(rr*0.05, 0.0, r2);
+      col = mix(col, dc, (ring1 + ring2) * 0.6);                          // 白天也可见(替换混合)
+      col += dc * (ring1 * 1.0 + ring2 * 0.7) * vis;                      // 夜面增辉
+      float core = smoothstep(rr*0.26, 0.0, ang);
+      float beat = 0.65 + 0.35*sin(uTime*2.6);
+      col = mix(col, dc * 0.35, smoothstep(rr*0.32, rr*0.2, ang) * 0.7);  // 核心暗色衬底
+      col += mix(dc, vec3(1.0), 0.6) * core * beat * 1.25 * (prog >= 1.0 ? 1.0 : 0.45);
+      col = mix(col, dc, (1.0 - smoothstep(rr*0.8, rr, ang)) * 0.08);     // 极淡填充
     } else {
-      float pulse = 0.45 + 0.55*sin(uTime*2.2 + float(i)*1.7);
-      col += dc * ring * 0.5 * pulse;                          // 施工中:脉冲环
-      col = mix(col, dc, fillm * 0.05 * uDistProg[i]);
+      // ── 普通区划:双层圆圈 + 闪烁亮芯 ──
+      float wO = rr * 0.10;
+      float ringO = smoothstep(wO, 0.0, abs(ang - rr));            // 外环
+      float ringI = smoothstep(wO * 0.7, 0.0, abs(ang - rr*0.58)); // 内环
+      float fillm = 1.0 - smoothstep(rr*0.82, rr, ang);
+      if (prog >= 1.0){
+        col = mix(col, dc, fillm * (0.14 + 0.08*night));                  // 淡色底
+        col = mix(col, dc, ringO * 0.55 + ringI * 0.4);                   // 双环:替换混合压住亮背景
+        col += dc * (ringO * 0.5 + ringI * 0.3) * vis;                    // 夜面增辉
+        col = mix(col, dc * 0.3, smoothstep(rr*0.2, rr*0.12, ang) * 0.7); // 亮芯暗色衬底
+        float cdot = smoothstep(rr*0.15, 0.0, ang);
+        float blink = 0.45 + 0.55*sin(uTime*3.2 + sd*2.0);                // 闪烁亮芯
+        col += mix(dc, vec3(1.0), 0.6) * cdot * blink * 1.2;
+      } else {
+        float pulse = 0.4 + 0.6*sin(uTime*2.4 + sd);
+        col = mix(col, dc, ringO * 0.4 * pulse);
+        col += dc * ringO * 0.5 * pulse;                                  // 施工:外环脉冲
+        col = mix(col, dc, fillm * 0.05 * prog);
+      }
     }
   }
 
