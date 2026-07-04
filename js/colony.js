@@ -205,7 +205,7 @@ function fixDistrictTypes(p, st){
 function buildingCond(p, def){
   const out = [];
   if (def.cond.role) out.push({ met: p.role === def.cond.role, text: def.cond.role === 'hab' ? '需居住型星球' : '需资源型星球' });
-  if (def.cond.lv) out.push({ met: devLevel(p) >= def.cond.lv, text: `星球达到「${LEVELS[def.cond.lv].name}」` });
+  if (def.cond.lv) out.push({ met: devLevel(p) >= def.cond.lv, text: `星球达到「${lvName(p, def.cond.lv)}」` });
   if (def.cond.civ) out.push({ met: civIndex() >= def.cond.civ, text: `文明指数 ≥ ${def.cond.civ}` });
   return out;
 }

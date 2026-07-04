@@ -59,7 +59,7 @@ function hardCondList(p){
       return { met: save.story && save.story.idx >= c.story, text: `完成主线「${STORY[c.story-1].title}」章节` };
     if (c.planetLv){
       const t = planetsOf(p.sysId).find(x => x.id === c.planetLv.id);
-      return { met: devLevel(t) >= c.planetLv.lv, text: `${t.name} 达到「${LEVELS[c.planetLv.lv].name}」` };
+      return { met: devLevel(t) >= c.planetLv.lv, text: `${t.name} 达到「${lvName(t, c.planetLv.lv)}」` };
     }
     if (c.sumRole)
       return { met: sumLevels(c.sumRole.role) >= c.sumRole.lv, text: `${c.sumRole.role==='hab'?'居住':'资源'}型星球等级和 ≥ ${c.sumRole.lv}` };

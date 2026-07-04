@@ -31,6 +31,12 @@ const LEVELS = [
   { name: '生态文明',   th: 10450 },
 ];
 const MAX_LEVEL = 20;
+/* 资源星命名轨:无人采掘/工业主题(阈值与 LEVELS 共用,只换名字)——
+   熔岩矿星叫「行星花园」属于事故,这里给它配得上的名字 */
+const LEVELS_RES = ['未开发','前哨站','勘探营地','采掘站','矿业镇','自动矿区',
+  '精炼基地','重工集群','轨道工厂','行星矿都','深核矿井','工业之环','熔炉世界',
+  '无人矿世','行星机器','星壤再造','恒星锻炉','工业巨构','环星工业带','戴森雏形','铸世熔炉'];
+function lvName(p, lv){ return p && p.role === 'res' ? LEVELS_RES[lv] : LEVELS[lv].name; }
 /* 开发点权重 */
 const DEV_PER_DISTRICT = 100, DEV_PER_BUILDING = 150, DEV_PER_POP_TIER = 150;
 const EXPORT_DEV_K = 100, EXPORT_DEV_BASE = 1000;   // 资源星:累计出口 → 开发(对数)
@@ -725,11 +731,11 @@ const WEAPONS = {
     unlock:null, base:{ metal:550 } },
   laser:   { name:'激光炮', en:'LASER CANNON', fp:38,
     desc:'高伤害定向能武器,需要充能间隙。射线在尘埃带里会划出一条笔直的霞光。',
-    unlock:{ planet:'kenxi/jinyan', lv:5, text:'烬岩 达到「自治市」(稀有金属工业)' },
+    unlock:{ planet:'kenxi/jinyan', lv:5, text:'烬岩 达到「自动矿区」(稀有金属工业)' },
     base:{ metal:1500, he3:400 } },
   missile: { name:'导弹井', en:'MISSILE LAUNCHER', fp:58,
     desc:'垂直发射井,追踪导弹造成大范围杀伤。可锁定攻击多个目标。',
-    unlock:{ planet:'kenxi/shamu', lv:5, text:'纱幕 达到「自治市」(化合物推进剂)' },
+    unlock:{ planet:'kenxi/shamu', lv:5, text:'纱幕 达到「自动矿区」(化合物推进剂)' },
     base:{ metal:900, chem:1200 } },
 };
 const WEAPON_MAXLV = 5;

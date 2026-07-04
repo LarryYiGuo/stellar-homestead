@@ -984,7 +984,7 @@ function refreshLabelText(){
       const port = (typeof portDone === 'function' && portDone(d.key))
         ? `<span class="portb" title="星港 · 贸易线 ${linesAt(d.key).length} 条"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="width:10px;height:10px"><circle cx="12" cy="5.5" r="2.2"/><path d="M12 7.7V19"/><path d="M5 13a7 7 0 0 0 14 0"/><path d="M8.5 10.5h7"/></svg>${linesAt(d.key).length}</span>` : '';
       el.innerHTML = `${iconOf(d)}<span style="color:var(--text-dim)">${d.name}</span>` +
-        (lv>0 ? `<span class="lvb">${LEVELS[lv].name}</span>` : '') + port;
+        (lv>0 ? `<span class="lvb">${lvName(d, lv)}</span>` : '') + port;
     }
     const pe = labelEls['__pirate'];
     if (pe && pirateBase){

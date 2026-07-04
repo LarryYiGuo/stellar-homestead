@@ -152,9 +152,9 @@ function renderDevBlock(){
   const isMax = lv >= MAX_LEVEL;
   let nextHtml, etaHtml = '';
   if (isMax){
-    nextHtml = `<div class="next-info">已达最高阶段 <b>生态文明</b>${d.role==='res' ? ',资源产出进入永续模式。' : ',行星已完全融入文明网络。'}</div>`;
+    nextHtml = `<div class="next-info">已达最高阶段 <b>${lvName(d, MAX_LEVEL)}</b>${d.role==='res' ? ',资源产出进入永续模式。' : ',行星已完全融入文明网络。'}</div>`;
   } else {
-    nextHtml = `<div class="next-info">下一阶段 <b>${LEVELS[lv+1].name}</b> · 还差 <b>${Math.ceil(LEVELS[lv+1].th - pts)}</b> 开发点 —— ${d.role === 'hab' ? '开区划 / 建建筑 / 涨人口 / 运移民' : '开区划 / 建建筑 / 出口产出'}皆可推进</div>`;
+    nextHtml = `<div class="next-info">下一阶段 <b>${lvName(d, lv+1)}</b> · 还差 <b>${Math.ceil(LEVELS[lv+1].th - pts)}</b> 开发点 —— ${d.role === 'hab' ? '开区划 / 建建筑 / 涨人口 / 运移民' : '开区划 / 建建筑 / 出口产出'}皆可推进</div>`;
     etaHtml = `<span>${Math.floor(pts)} / ${LEVELS[lv+1].th} pts</span>`;
   }
 
@@ -196,7 +196,7 @@ function renderDevBlock(){
   blk.innerHTML = `
     ${dockControlHtml(d)}
     <div class="level-row">
-      <div class="level-name">${LEVELS[lv].name}</div>
+      <div class="level-name">${lvName(d, lv)}</div>
       <div class="level-num">LV ${lv} / ${MAX_LEVEL}</div>
     </div>
     <div class="bar"><div class="fill ${isMax?'max':''}" style="width:${(isMax?1:prog)*100}%"></div></div>
@@ -713,7 +713,7 @@ function districtsHtml(p){
     const after = Math.max(12, Math.min(50, Math.round(28 * Math.pow(p.radius, 1.35))));
     const costTxt = Object.entries(TERRAFORM_COST).map(([k,v]) => `${RESOURCES[k].name} ${fmtNum(v)}`).join(' + ');
     tfHtml = `<button id="terraform-btn" class="act-btn amber${armCls('tf:'+p.key)}" style="margin-top:.55rem" ${ok && canAfford(TERRAFORM_COST) ? '' : 'disabled'}>${armTxt('tf:'+p.key, `类 地 化 改 造 → ${after} 区划`, `确认改造(${costTxt})`)}</button>
-      <p class="hint">仅火星类岩石行星可改造(卫星/温室星不可)· 需「生态文明」+ 文明指数 ≥ ${TERRAFORM_REQ.civ} · 耗资:${costTxt}</p>`;
+      <p class="hint">仅火星类岩石行星可改造(卫星/温室星不可)· 需本星达到「${lvName(p, TERRAFORM_REQ.lv)}」+ 文明指数 ≥ ${TERRAFORM_REQ.civ} · 耗资:${costTxt}</p>`;
   }
   return rows.join('') + investHtml + tfHtml;
 }
@@ -753,7 +753,7 @@ function renderSysPanel(){
       const lv = devLevel(p);
       return `<div class="cond-item ${lv>0?'met':''}" style="display:flex;justify-content:space-between">
         <span>${p.name} · ${p.type}</span>
-        <span>${lv>0 ? LEVELS[lv].name : (p.role==='hab'?'宜居':RESOURCES[p.res.key].name)}</span></div>`;
+        <span>${lv>0 ? lvName(p, lv) : (p.role==='hab'?'宜居':RESOURCES[p.res.key].name)}</span></div>`;
     }).join('');
     planetsHtml = `<div class="cond-box"><div class="cond-title">行星概览 · ${ps.length} 颗</div>${planetsHtml}</div>`;
   } else {
@@ -845,7 +845,7 @@ function refreshDock(){
     el.innerHTML = `
       <div class="pic" style="color:${dotColor(d)}">${iconOf(d)}</div>
       <div class="nm">${nm}</div>
-      <div class="lv" style="${lv>0 ? `color:${d.role==='hab'?'var(--green)':'var(--amber)'}` : (locked ? '' : 'color:var(--cyan)')}">${lv>0 ? LEVELS[lv].name : (locked ? '🔒 未解锁' : '可建立')}</div>`;
+      <div class="lv" style="${lv>0 ? `color:${d.role==='hab'?'var(--green)':'var(--amber)'}` : (locked ? '' : 'color:var(--cyan)')}">${lv>0 ? lvName(d, lv) : (locked ? '🔒 未解锁' : '可建立')}</div>`;
     el.onclick = () => focusPlanet(d.key);
     dock.appendChild(el);
   }
@@ -1472,7 +1472,7 @@ function tickUI(){
   for (const o of planetObjs){
     const d = o.data, lv = devLevel(d);
     if (prevLevels[d.key] !== undefined && lv > prevLevels[d.key] && prevLevels[d.key] > 0){
-      showToast(`<b>${d.name}</b> 已发展为 <b>${LEVELS[lv].name}</b>`, {sfx:'levelup', say:'Expansion complete.'});
+      showToast(`<b>${d.name}</b> 已发展为 <b>${lvName(d, lv)}</b>`, {sfx:'levelup', say:'Expansion complete.'});
       refreshDock();
     }
     prevLevels[d.key] = lv;

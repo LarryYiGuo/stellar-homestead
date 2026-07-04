@@ -68,7 +68,7 @@ async function init(){
   const deved = allPlanets().filter(p => devLevel(p) > 0);
   if (deved.length > 1){
     const best = deved.reduce((a,b) => devLevel(a) >= devLevel(b) ? a : b);
-    setTimeout(() => showToast(`欢迎回来,指挥官 —— <b>${best.name}</b> 当前阶段:<b>${LEVELS[devLevel(best)].name}</b>`, {say:'Welcome back, Commander.'}), 1400);
+    setTimeout(() => showToast(`欢迎回来,指挥官 —— <b>${best.name}</b> 当前阶段:<b>${lvName(best, devLevel(best))}</b>`, {say:'Welcome back, Commander.'}), 1400);
   }
 }
 init();
