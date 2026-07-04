@@ -561,7 +561,7 @@ function finishBattle(result){
   if (result === 'victory' || result === 'withdraw' || result === 'escape'){
     let mult = result === 'victory' ? 1 : result === 'withdraw' ? 0.5 : 0.7;
     mult *= (B.autoMult || 1) * (cargoDown ? 0.6 : 1) * (isBoss ? B.boss.lootMult : 1);
-    const total = Math.round(B.value * 3 * sys.rich * mult * (B.region ? B.region.loot : 1) * COLONY_FX.loot * (1 + officerFx().loot));
+    const total = Math.round(B.value * 2 * sys.rich * mult * (B.region ? B.region.loot : 1) * COLONY_FX.loot * (1 + officerFx().loot));
     const mainKey = (sys.bias && sys.bias !== 'hab') ? sys.bias : 'metal';
     const keys = Object.keys(RESOURCES).filter(k => k !== mainKey);
     const sideKey = keys[Math.floor(Math.random() * keys.length)];
@@ -580,6 +580,13 @@ function finishBattle(result){
     summary = result === 'defeat'
       ? `引擎被击瘫,列车遭到劫掠 —— 金库损失 ${(lossRate * 100).toFixed(0)}%`
       : `突围成功但代价惨重 —— 金库损失 ${(lossRate * 100).toFixed(0)}%`;
+  }
+  // 货舱破裂:舱内实体货物洒落(押运风险)
+  if (cargoDown && typeof holdOf === 'function'){
+    const hold = holdOf();
+    let spilled = 0;
+    for (const k in hold){ const lose = Math.floor(hold[k] * 0.4); hold[k] -= lose; spilled += lose; }
+    if (spilled > 0) summary += `;货舱破裂,洒落货物 ${fmtNum(spilled)}`;
   }
 
   // 击伤持久化(战斗中重启成功的车厢视为修复)

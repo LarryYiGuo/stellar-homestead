@@ -186,6 +186,10 @@ function gateTick(){                     // 货船网络:a)收集作用圈 b)接
             if (take <= 0) continue;
             st[k] -= take; room -= take;
             g.store[k] = (g.store[k] || 0) + take;
+            if (k === pl.res.key){       // 星门吸取特产 = 出口,驱动资源星开发
+              if (!save.exported) save.exported = {};
+              save.exported[key] = (save.exported[key] || 0) + take;
+            }
           }
         }
       }
@@ -235,37 +239,31 @@ function gateTick(){                     // 货船网络:a)收集作用圈 b)接
   }
 }
 
-/* ── 自动运输结算(自动装载/卸载;没货也跑) ── */
-function pstoreOf(key){
-  if (!save.pstore) save.pstore = {};
-  if (!save.pstore[key]) save.pstore[key] = {};
-  return save.pstore[key];
-}
+/* ── 自动运输结算(自动装载/卸载;没货也跑);pstoreOf 见 economy.js ── */
 function shipSend(srcKey, dstKey, what, cap){
   if (!what || what === 'none') return;
   if (what === 'pax'){
     const src = planetByKey(srcKey), dst = planetByKey(dstKey);
     if (!src || !dst || src.role !== 'hab' || devLevel(src) < 2 || !save.est[dstKey] || dst.role !== 'hab') return;
     const mi = migInfo(src);
-    const take = Math.min(cap, mi.pool);
+    const take = Math.min(cap, mi.pool, Math.floor(popOf(src)));
     if (take <= 0) return;
     save.mig[srcKey].pool -= take;
-    save.popExtra[srcKey] = (save.popExtra[srcKey] || 0) - take;
-    save.popExtra[dstKey] = (save.popExtra[dstKey] || 0) + take;
+    save.pop[srcKey] = Math.max(0, (save.pop[srcKey] || 0) - take);
+    save.pop[dstKey] = (save.pop[dstKey] || 0) + take;
+    if (!save.settled) save.settled = {};
+    save.settled[dstKey] = (save.settled[dstKey] || 0) + take;
     return;
   }
-  // 资源:优先源星本地产出仓,其次源星资源仓
+  // 资源:源星本地仓 → 目的星本地仓;资源星运出特产计入出口(驱动其开发)
+  const st = pstoreOf(srcKey);
+  const take = Math.min(cap, st[what] || 0);
+  if (take <= 0) return;
+  st[what] -= take;
   const src = planetByKey(srcKey);
-  let take = 0;
   if (src && src.role === 'res' && src.res.key === what){
-    take = Math.min(cap, resAvail(src));
-    if (take > 0) save.taken[srcKey] = (save.taken[srcKey] || 0) + take;
-  }
-  if (take <= 0){
-    const st = pstoreOf(srcKey);
-    take = Math.min(cap, st[what] || 0);
-    if (take <= 0) return;
-    st[what] -= take;
+    if (!save.exported) save.exported = {};
+    save.exported[srcKey] = (save.exported[srcKey] || 0) + take;
   }
   const dst = pstoreOf(dstKey);
   dst[what] = (dst[what] || 0) + Math.round(take);
@@ -293,25 +291,20 @@ function districtCounts(key){
   if (st) for (const d of st.districts) if (dDone(d)) (d.type === 'habitation' ? hab++ : d.type === 'trade' ? trade++ : 0);
   return { hab, trade };
 }
-function infRatePerMin(){
+function infRatePerMin(){                // 商贸/民生区划常驻产出;列车停靠锚地 ×1.5
   let rate = 0;
   const tr = save.train;
-  const dockedKeys = [];
-  if (tr.status === 'docked' && !localTransit()){
-    const anchor = anchorageOf(tr.planet, tr.sys);
-    for (const p of planetsOf(tr.sys)){
-      if (anchorageOf(p.id, tr.sys) !== anchor) continue;
-      dockedKeys.push(p.key);
-      const c = districtCounts(p.key);
-      rate += c.hab * INF_DOCK_HAB + c.trade * INF_DOCK_TRADE;
-    }
-  }
-  // 母港:星港常驻全额产出;列车停靠母港锚地时,母港再额外 +50%
-  const hp = save.homePort;
-  if (hp && save.est[hp]){
-    const c = districtCounts(hp);
-    const base = c.hab * INF_DOCK_HAB + c.trade * INF_DOCK_TRADE;
-    rate += dockedKeys.includes(hp) ? base * 0.5 : base;   // 停靠时锚地循环已计全额,此处为额外加成
+  const dockedAnchor = (tr.status === 'docked' && !localTransit()) ? anchorageOf(tr.planet, tr.sys) : null;
+  for (const key in save.est){
+    const p = planetByKey(key);
+    if (!p) continue;
+    const c = districtCounts(key);
+    let r = c.hab * INF_DOCK_HAB + c.trade * INF_DOCK_TRADE;
+    if (r <= 0) continue;
+    if (shortOf(p).chem) r *= 0.5;       // 消费品断供:民心低落
+    if (dockedAnchor && p.sysId === tr.sys && anchorageOf(p.id, p.sysId) === dockedAnchor) r *= 1.5;
+    if (key === save.homePort) r *= 1.25;  // 母港枢纽
+    rate += r;
   }
   rate += (save.lines || []).filter(l => l.on).length * INF_LINE_PER_MIN;
   return rate * (1 + officerFx().inf);
@@ -342,14 +335,21 @@ function conscriptMigrants(p){
   return true;
 }
 
-/* ── 星球资源仓 + 人口资源加速 ── */
-function demandOf(p){                // 每星的"需求资源"(确定性,排除自产)
-  const keys = Object.keys(RESOURCES).filter(k => !(p.res && p.res.key === k));
-  return keys[hashStr(p.key + ':demand') % keys.length];
+/* ── 需求判定:当前覆盖时间最短的消耗资源(消费品/生命支持/能源) ── */
+function demandOf(p){
+  const need = consumptionOf(p);
+  const st = pstoreOf(p.key);
+  let worst = null, worstCover = Infinity;
+  for (const k of ['chem','ice','he3']){
+    if ((need[k] || 0) <= 0) continue;
+    const cover = (st[k] || 0) / need[k];   // 覆盖分钟数
+    if (cover < worstCover){ worstCover = cover; worst = k; }
+  }
+  return worst;
 }
-function supplyStore(p, amount){     // 列车从金库补给需求资源
+function supplyStore(p, amount){     // 从金库远程调拨最缺的资源入本星仓
   const k = demandOf(p);
-  if ((save.treasury[k] || 0) < amount) return false;
+  if (!k || (save.treasury[k] || 0) < amount) return false;
   save.treasury[k] -= amount;
   const st = pstoreOf(p.key);
   st[k] = (st[k] || 0) + amount;
@@ -357,83 +357,6 @@ function supplyStore(p, amount){     // 列车从金库补给需求资源
   persistSave();
   return true;
 }
-/* ── 人口加速(投入制):选资源 + 数量 → 确认开烧;稀有度决定强度 ── */
-function boostRunOf(p){ return save.boostRun && save.boostRun[p.key]; }
-function boostBurnRate(p){ return Math.max(BOOST_BURN_MIN, popOf(p) * BOOST_BURN_POPK); }   // /秒
-function startBoostRun(p, k, amount){
-  amount = Math.floor(amount);
-  if (!RESOURCES[k] || amount <= 0 || p.role !== 'hab') return false;
-  // 投入来源:优先金库/枢纽,不足才动本星资源仓——保住仓内需求资源的通商开发加成
-  const st = pstoreOf(p.key);
-  const fromBank = Math.min(amount, Math.floor(availOf(k)));
-  const fromStore = amount - fromBank;
-  if (fromStore > Math.floor(st[k] || 0)) return false;
-  if (fromBank > 0) payCost({ [k]: fromBank });
-  if (fromStore > 0) st[k] -= fromStore;
-  if (!save.boostRun) save.boostRun = {};
-  const run = save.boostRun[p.key];
-  if (run && run.k === k) run.left += amount;            // 同资源追加
-  else save.boostRun[p.key] = { k, left: amount };       // 换资源:覆盖新一轮
-  pushLog(`${p.name} 投入 ${RESOURCES[k].name} ${fmtNum(amount)} 驱动人口加速(+${BOOST_TIER_RATE[RES_TIERS[k]]*100}%/小时)`);
-  persistSave();
-  return true;
-}
-function stopBoostRun(p){                                // 停止:余量退回本星资源仓
-  const r = boostRunOf(p);
-  if (!r) return false;
-  const st = pstoreOf(p.key);
-  st[r.k] = (st[r.k] || 0) + Math.floor(r.left);
-  delete save.boostRun[p.key];
-  persistSave();
-  return true;
-}
-/* 自动托管:燃料耗尽时自动续投——基础优先(保稀有给升级);
-   需求资源只走金库/枢纽,不动仓内存货(保护通商开发加成) */
-function boostAutoRefill(p){
-  const order = Object.keys(RESOURCES).sort((a, b) => (RES_TIER_RANK[RES_TIERS[a]] || 0) - (RES_TIER_RANK[RES_TIERS[b]] || 0));
-  const st = pstoreOf(p.key), dk = demandOf(p);
-  const chunk = Math.max(200, Math.ceil(boostBurnRate(p) * 600));   // 一次续 ≥10 分钟燃料
-  for (const k of order){
-    const bank = Math.floor(availOf(k));
-    const store = k === dk ? 0 : Math.floor(st[k] || 0);
-    const total = bank + store;
-    if (total <= 0) continue;
-    const amount = Math.min(chunk, total);
-    const fromBank = Math.min(amount, bank);
-    if (fromBank > 0) payCost({ [k]: fromBank });
-    const fromStore = amount - fromBank;
-    if (fromStore > 0) st[k] -= fromStore;
-    const run = save.boostRun[p.key];
-    if (run && run.k === k) run.left += amount;
-    else save.boostRun[p.key] = { k, left: amount };
-    return true;
-  }
-  return false;
-}
-function boostTick(){                // 每秒:燃烧投入资源,人口按稀有度增速;托管星自动续投
-  if (!save.boostRun) save.boostRun = {};
-  if (save.boostAuto) for (const key in save.boostAuto){
-    if (!save.boostAuto[key]) continue;
-    const r0 = save.boostRun[key];
-    if (r0 && r0.left > 0) continue;
-    const p = planetByKey(key);
-    if (!p || !save.est[key] || p.role !== 'hab') continue;
-    boostAutoRefill(p);
-  }
-  for (const key in save.boostRun){
-    const p = planetByKey(key), r = save.boostRun[key];
-    if (!p || !save.est[key] || p.role !== 'hab' || !r || r.left <= 0){ delete save.boostRun[key]; continue; }
-    const pop = popOf(p);
-    const cap = popCapOf(p);
-    if (pop >= cap) continue;            // 生态承载触顶:暂停燃烧,燃料保留,上限提升后自动续
-    const burn = Math.min(r.left, Math.max(BOOST_BURN_MIN, pop * BOOST_BURN_POPK));
-    r.left -= burn;
-    const gain = Math.min(pop * BOOST_TIER_RATE[RES_TIERS[r.k]] / 3600, cap - pop);
-    save.popExtra[key] = (save.popExtra[key] || 0) + gain;
-    if (r.left <= 0) delete save.boostRun[key];
-  }
-}
-
 /* ── 星港竣工/里程碑播报 + 引导线《钢铁码头》 ── */
 function portStoryContentReady(){
   const ps = save.portStory || { idx: 0 };
@@ -460,15 +383,13 @@ function applyPortChoice(ch, ci){
   save.portStory.idx++;
   persistSave();
 }
-/* ── 自动化经济:玩家是加速者,世界自己也会运转 ──
-   · 殖民地 LV3+ 自动开建星港(不耗金库,工期 ×2;玩家出资=正常工期,即"加速")
-   · 有星港的居住星自动从同系资源星小批量获取需求资源(自动航线,入资源仓) ── */
+/* ── 自动化经济:世界自己也会运转(仅便利性,不替代物流玩法) ──
+   · 「殖民地」级居住星自动开建星港(不耗金库,工期 ×2;玩家出资=正常工期,即"加速") ── */
 let _autoEcoAt = 0;
 function autoEconomyTick(){
   const now = Date.now();
   if (now - _autoEcoAt < 5000) return;       // 5 秒节流,防卡
   _autoEcoAt = now;
-  // ① 自动星港:每次最多开工一座,殖民地用本地产能慢慢建
   for (const key in save.est){
     const p = planetByKey(key);
     if (!p || p.moonOf || devLevel(p) < 4 || portState(key)) continue;   // 「殖民地」级自动建星港;卫星不入贸易网,不自动建
@@ -477,65 +398,12 @@ function autoEconomyTick(){
     pushLog(`${p.name} 殖民地自筹开建星港(本地产能,工期 ${fmtDuration(STARPORT_TIME * 2)};注资可加速)`);
     break;
   }
-  // ② 自动补给航线:居住星(港成+有需求)← 同系资源星(港成+产出匹配),90 秒一班(离线补结,封顶 50 班)
-  if (!save.autoShip) save.autoShip = {};
-  for (const key in save.est){
-    const p = planetByKey(key);
-    if (!p || p.role !== 'hab' || !portDone(key)) continue;
-    const dk = demandOf(p);
-    const last = save.autoShip[key] || 0;
-    const trips = Math.min(50, Math.floor((now - last) / 90000));
-    if (trips <= 0) continue;
-    const src = planetsOf(p.sysId).find(o =>
-      o.role === 'res' && o.res.key === dk && portDone(o.key) && resAvail(o) > 10);
-    if (!src) continue;
-    const qty = Math.min(45 * trips, Math.floor(resAvail(src)));
-    save.taken[src.key] = (save.taken[src.key] || 0) + qty;
-    const st = pstoreOf(key);
-    st[dk] = (st[dk] || 0) + qty;
-    save.autoShip[key] = now;
-  }
-  // ②.5 自动生产线:有星港的资源星,定期把产出装入本星港仓(等待星门/列车调取)
-  for (const key in save.est){
-    const p = planetByKey(key);
-    if (!p || p.role !== 'res' || !portDone(key)) continue;
-    const last = save.autoShip['prod:' + key] || 0;
-    const trips = Math.min(50, Math.floor((now - last) / 90000));
-    if (trips <= 0){ if (!last) save.autoShip['prod:' + key] = now; continue; }
-    const perTrip = 45 * dockLvOf(key) + Math.floor(0.5 * resRateOf(p) * 90);   // 基础装卸 + 产线直供(产率 50%)
-    const qty = Math.min(perTrip * trips, Math.floor(resAvail(p)));
-    if (qty > 0){
-      save.taken[key] = (save.taken[key] || 0) + qty;
-      const st = pstoreOf(key);
-      st[p.res.key] = (st[p.res.key] || 0) + qty;
-    }
-    save.autoShip['prod:' + key] = now;
-  }
-  // ③ 开发增速(est 回拨,含离线):通商加成 + 居住区划加成
-  //    通商:仓内有需求资源 ×DEV_TRADE_BOOST;居住区划:每座建成 +5%,封顶 +100%
-  const lastCredit = save.devCreditAt || now;
-  const dt = Math.min(now - lastCredit, 7 * 86400000);   // 单次封顶 7 天,防异常跳变
-  save.devCreditAt = now;
-  if (dt > 0){
-    for (const key in save.est){
-      const p = planetByKey(key);
-      if (!p || p.role !== 'hab') continue;
-      if (devLevel(p) >= MAX_LEVEL) continue;
-      let mult = 0;
-      if ((pstoreOf(key)[demandOf(p)] || 0) > 0) mult += DEV_TRADE_BOOST;
-      mult += Math.min(1, districtCounts(key).hab * 0.05);   // 居住区划:人口聚落自我加速
-      mult += 0.4 * Math.min(1, popOf(p) / Math.max(1, popCapOf(p)));   // 人口饱和度:住满的殖民地发展最快(+40% 封顶)
-      mult += officerFx().dev;                               // 生态学家:全行星开发增速
-      if (mult > 0) save.est[key] -= dt * mult;
-    }
-  }
 }
 
 let _portAnn = {};
 function portTick(){
   settleLines();
   influenceTick();
-  boostTick();
   autoEconomyTick();
   gateTick();
   for (const key in (save.starport || {})){

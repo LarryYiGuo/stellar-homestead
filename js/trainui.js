@@ -98,7 +98,9 @@ function trainStatusHtml(){
     ? `轨道转移中 → <span>${(planetsOf(tr.sys).find(x=>x.id===tr.localTo)||{}).name || ''}</span> · ${Math.ceil(Math.max(0,(tr.localArriveAt-Date.now())/1000))}s`
     : `泊于 <span class="ok">${dp ? dp.name : '?'}</span> 轨道`;
   const crew = `<span class="ok">乘员 ${crewTeams()} 组(全车维护)</span>`;
-  return `驻留 <span class="ok">${sysById(tr.sys).name}</span> 星系 · ${where} · 随车移民 <span>${fmtNum(tr.pax)}</span>/${fmtNum(paxCapacity())} · ${crew}<br>本地仓内待收取 <span>${fmtNum(info.avail)}</span> · 弹药 <span>${tr.ammo}/${ammoMax()}</span>${tr.ammo < ammoMax() ? '<span class="ammo-dot" title="弹药不满 —— 停靠军事区锚地补充"></span>' : ''}${anchorHasArsenal() ? ' <span class="ok">(军事区补给中)</span>' : ''}`;
+  const holdTxt = Object.entries(holdOf()).filter(([,v]) => v >= 1)
+    .map(([k,v]) => `<span style="color:${RESOURCES[k].color}">${RESOURCES[k].name} ${fmtNum(Math.floor(v))}</span>`).join(' · ');
+  return `驻留 <span class="ok">${sysById(tr.sys).name}</span> 星系 · ${where} · 随车移民 <span>${fmtNum(tr.pax)}</span>/${fmtNum(paxCapacity())} · ${crew}<br>货舱 <span>${fmtNum(holdTotal())}/${fmtNum(cargoCap())}</span>${holdTxt ? '(' + holdTxt + ')' : ''} · 本系仓内待收取 <span>${fmtNum(info.avail)}</span> · 弹药 <span>${tr.ammo}/${ammoMax()}</span>${tr.ammo < ammoMax() ? '<span class="ammo-dot" title="弹药不满 —— 停靠军事区锚地补充"></span>' : ''}${anchorHasArsenal() ? ' <span class="ok">(军事区补给中)</span>' : ''}`;
 }
 
 function deckChipsHtml(){
@@ -203,11 +205,13 @@ function renderTrainCard(){
       <div class="car-name">未解锁</div></div>`;
 
   const info = tr.status === 'docked' ? collectInfo(tr.sys) : null;
-  const canCollect = info && info.avail > 1 && info.cdLeft <= 0 && info.cap > 0;
+  const canCollect = info && info.avail > 1 && info.cdLeft <= 0 && info.space > 0;
   const collectLabel = tr.status !== 'docked' ? '航行中无法收取'
     : info.cdLeft > 0 ? `装载冷却 · ${fmtDuration(info.cdLeft)}`
     : info.avail <= 1 ? '本星系仓内无资源'
-    : `收取本星系资源(上限 ${fmtNum(info.cap)})`;
+    : info.space <= 0 ? '货舱已满 —— 先卸货或入库'
+    : `收取本星系资源(货舱余位 ${fmtNum(info.space)})`;
+  const canBank = holdTotal() >= 1 && canBankHere();
 
   card.innerHTML = `
     <h3>晨昏号 · 星际列车<span class="en">INTERSTELLAR TRAIN</span></h3>
@@ -231,6 +235,7 @@ function renderTrainCard(){
     <div class="sec-label">指令卡组 · ${save.deck.length} 张(遭遇战胜利可获取新指令)</div>
     <div class="treasury">${deckChipsHtml()}${COLONY_FX.crew > 0 ? `<div class="res-chip" title="由各殖民地的乘员训练营培养"><span class="rdot" style="background:var(--green)"></span><span class="rv">${COLONY_FX.crew}</span><span class="rn">乘员储备 · 车组系统筹备中</span></div>` : ''}</div>
     <button class="act-btn amber" id="t-collect" ${canCollect?'':'disabled'}>${collectLabel}</button>
+    <button class="act-btn cyan" id="t-bank" ${canBank?'':'disabled'} title="需停靠有星港的锚地或母港">${holdTotal() >= 1 ? `货舱入库金库(${fmtNum(holdTotal())})` : '货舱为空'}</button>
     <div class="sec-label" style="margin-top:1rem;--c:var(--cyan)">列车研发 · 科研值立项,工期先快后慢,影响力可加速</div>
     <div class="opt-row" id="t-techs">${techHtml()}</div>
     ${save.upgrade ? `<div class="sec-label" style="margin-top:.8rem;--c:var(--amber)">升级工坊</div><div class="opt-row" id="t-upgrade">${upgradeRowHtml()}</div>` : ''}
@@ -259,6 +264,12 @@ function renderTrainCard(){
   };
   const cbtn = $('t-collect');
   if (cbtn) cbtn.onclick = () => { doCollect(tr.sys); renderTrainCard(); };
+  const bbtn = $('t-bank');
+  if (bbtn) bbtn.onclick = () => {
+    const moved = bankHold();
+    if (moved){ showToast('货舱物资已入库金库', {sfx:'confirm', say:'Cargo transferred to treasury.'}); renderTrainCard(); }
+    else sfx('err');
+  };
   card.querySelector('.close-row .close-btn').onclick = () => $('train-overlay').classList.remove('show');
   bindDetailActions();
 }
@@ -470,13 +481,13 @@ function carDetailCore(){
 
 function bindDetailActions(){
   const card = $('train-card');
-  card.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => {
+  card.querySelectorAll('[data-buy]').forEach(b => b.onclick = () => btnConfirm(b, () => {
     if (buyCar(b.dataset.buy)){
       selCar = carCount() - 1;
       showToast(`已加挂 <b>${CAR_TYPES[b.dataset.buy].name}</b> · 现编组 ${carCount()} 节`, {sfx:'confirm', say:'Car coupled.'});
       renderTrainCard();
     } else sfx('err');
-  });
+  }));
   card.querySelectorAll('[data-offup]').forEach(b => b.onclick = () => {
     const of = save.officers;
     if (of.active.length < OFFICER_SLOTS && !of.active.includes(b.dataset.offup)){
@@ -503,52 +514,52 @@ function bindDetailActions(){
     if (unequipUnique(selCar)){ showToast('具名武器已拆下入库,普通炮架保留', {sfx:'blip'}); renderTrainCard(); }
     else sfx('err');
   };
-  card.querySelectorAll('[data-install]').forEach(b => b.onclick = () => {
+  card.querySelectorAll('[data-install]').forEach(b => b.onclick = () => btnConfirm(b, () => {
     if (installWeapon(selCar, b.dataset.install)){
       showToast(`武器平台装备 <b>${WEAPONS[b.dataset.install].name}</b>`, {sfx:'confirm', say:'Weapon online.'});
       renderTrainCard();
     } else sfx('err');
-  });
+  }));
   const wup = card.querySelector('[data-wup]');
-  if (wup) wup.onclick = () => {
+  if (wup) wup.onclick = () => btnConfirm(wup, () => {
     if (upgradeWeapon(selCar)){
       const car = save.train.cars[selCar];
       showToast(`<b>${WEAPONS[car.wid].name}</b> 升级至 LV${car.wlv}`, {sfx:'levelup', say:'Weapon upgraded.'});
       renderTrainCard();
     } else sfx('err');
-  };
+  });
   const eup = card.querySelector('[data-engup]');
-  if (eup) eup.onclick = () => {
+  if (eup) eup.onclick = () => btnConfirm(eup, () => {
     if (upgradeEngine()){
-      showToast(`引擎升级至 <b>LV${save.train.engineLv}</b> · 航速 ${trainSpeed().toFixed(1)} 单位/分`, {sfx:'levelup', say:'Engine upgraded.'});
+      showToast(`引擎升级开工 → <b>LV${save.upgrade ? save.upgrade.to : save.train.engineLv}</b>`, {sfx:'levelup', say:'Engine upgrading.'});
       renderTrainCard();
     } else sfx('err');
-  };
+  });
   bindTechActions(card);
   const cu = card.querySelector('[data-carresearch]');
-  if (cu) cu.onclick = () => {
+  if (cu) cu.onclick = () => btnConfirm(cu, () => {
     const type = cu.dataset.carresearch;
     if (startCarResearch(type)){
       showToast(`改装方案研发立项:<b>${CAR_TYPES[type].name}</b> LV${save.techQueue.to} —— 完成后全列同型自动升级`, {sfx:'confirm', say:'Refit research started.'});
       renderTrainCard();
     } else sfx('err');
-  };
+  });
   card.querySelectorAll('[data-buildlv]').forEach(b => b.onclick = () => { _buildLv = +b.dataset.buildlv; sfx('blip'); renderTrainCard(); });
-  card.querySelectorAll('[data-build]').forEach(b => b.onclick = () => {
+  card.querySelectorAll('[data-build]').forEach(b => b.onclick = () => btnConfirm(b, () => {
     const type = b.dataset.build;
     const lv = Math.min(_buildLv, carTechLv(type));
     if (buildToDepot(type, lv)){
       showToast(`<b>${CAR_TYPES[type].name}</b> LV${lv} 开始建造 —— 完工后存入车厢库`, {sfx:'confirm', say:'Car construction started.'});
       renderTrainCard();
     } else sfx('err');
-  });
-  card.querySelectorAll('[data-replace]').forEach(b => b.onclick = () => {
+  }));
+  card.querySelectorAll('[data-replace]').forEach(b => b.onclick = () => btnConfirm(b, () => {
     const old = CAR_TYPES[save.train.cars[selCar].type].name;
     if (replaceCar(selCar, +b.dataset.replace)){
       showToast(`「${old}」已入库,换装 <b>${CAR_TYPES[b.dataset.replace].name}</b>`, {sfx:'confirm', say:'Car exchanged.'});
       renderTrainCard();
     } else sfx('err');
-  });
+  }));
   card.querySelectorAll('[data-recouple]').forEach(b => b.onclick = () => {
     const [key, idx] = b.dataset.recouple.split('::');
     if (recoupleCar(key, +idx)){
@@ -557,12 +568,12 @@ function bindDetailActions(){
     } else sfx('err');
   });
   const ru = card.querySelector('[data-rpup]');
-  if (ru) ru.onclick = () => {
+  if (ru) ru.onclick = () => btnConfirm(ru, () => {
     if (upgradeRpcoef()){
       showToast(`科研主机升级开工 → LV${save.upgrade.to}`, {sfx:'confirm', say:'Research core upgrading.'});
       renderTrainCard();
     } else sfx('err');
-  };
+  });
   const rep = card.querySelector('[data-repair]');
   if (rep) rep.onclick = () => {
     if (repairCar(selCar)){
@@ -580,8 +591,29 @@ function bindDetailActions(){
   };
 }
 
-/* ── 星系视图列车标记:大车头图标 + 车厢按属性分行 ── */
-const LOCO_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16V9a4 4 0 0 1 4-4h7c3 0 5 2.5 5 5.5V16z"/><path d="M4 12h16M9 5v7"/><circle cx="8" cy="19" r="1.4"/><circle cx="16" cy="19" r="1.4"/><path d="M15 8h3.5"/></svg>`;
+/* ── 星系视图列车标记:侧视流线型车头 + 连挂车厢 + 磁悬浮光轨 ── */
+const LOCO_ICON = `<svg viewBox="0 0 64 30" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="1" y="12.5" width="4.5" height="8" rx="1.6" fill="rgba(245,158,11,.28)" stroke-width="1.2"/>
+  <path d="M6.5 21.5 V12.5 Q6.5 8.5 11.5 8.5 H36 Q48 8.5 59.5 18.2 Q61.6 20 61 21.7 Q60.5 23 57.5 23 H9.5 Q6.5 23 6.5 21.5 Z" fill="rgba(245,158,11,.12)"/>
+  <path d="M38.5 11.2 H44 Q50 12.8 53.8 16.6 L38.5 16.6 Z" fill="currentColor" stroke="none" opacity=".9"/>
+  <rect x="11" y="11.8" width="24" height="4.6" rx="2.3" fill="rgba(245,158,11,.4)" stroke="none"/>
+  <path d="M10 19.6 H55" opacity=".4" stroke-width="1.1"/>
+  <path d="M15 8.5 V5.8 H18.5" opacity=".7" stroke-width="1.2"/>
+</svg>`;
+/* 标牌车厢小徽记(无外框,车体即边框) */
+const TCAR_GLYPHS = {
+  cargo:   `<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2.6" y="2.6" width="6.8" height="6.8" rx="1"/></svg>`,
+  person:  `<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="4.2" r="1.9"/><path d="M2.6 10.2c.6-2.4 2-3.4 3.4-3.4s2.8 1 3.4 3.4"/></svg>`,
+  weapon:  `<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M6 2.4l4.2 7.2H1.8z"/></svg>`,
+  general: `<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.4 4.4h7.2M2.4 7.6h7.2"/></svg>`,
+  eng:     `<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="6" cy="6" r="2.4"/><path d="M6 1.6v1.6M6 8.8v1.6M1.6 6h1.6M8.8 6h1.6"/></svg>`,
+  cryo:    `<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="6" r="3.4"/><circle cx="6" cy="6" r="1" fill="currentColor" stroke="none"/></svg>`,
+  lab:     `<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="6" cy="6" rx="4.2" ry="1.9"/><circle cx="6" cy="6" r="1" fill="currentColor" stroke="none"/></svg>`,
+};
+function tcarGlyph(c){
+  if (c.paxMode || c.type === 'habitat') return TCAR_GLYPHS.person;
+  return TCAR_GLYPHS[c.type] || TCAR_GLYPHS.general;
+}
 function refreshTrainTag(){
   const tag = $('train-tag');
   if (!tag) return;
@@ -592,30 +624,33 @@ function refreshTrainTag(){
     : (tr.status === 'docked' && tr.sys === curSysId));
   if (!visible){ tag.classList.add('hidden'); return; }
   tag.classList.remove('hidden');
+  const moving = tr.status === 'travel' || localTransit();
+  tag.classList.toggle('moving', moving);
   const status = tr.status === 'travel' ? ' · 航行中' : localTransit() ? ' · 转移中' : '';
   const cars = tr.cars.filter(c => c.type !== 'engine');
-  const cells = cars.map(c =>
-    `<div class="ccell ${c.damaged ? 'dmg' : ''}" title="${CAR_TYPES[c.type].name}${c.wid ? ' · ' + WEAPONS[c.wid].name + ' LV' + c.wlv : ''}${c.paxMode ? ' · 载人' : ''}${c.damaged ? ' · 受损' : ''}" style="color:${c.paxMode ? CAR_COLORS.habitat : CAR_COLORS[c.type]}">${ccellIcon(c)}</div>`
+  // 车头朝右 = 行进方向;车厢自左至右为「尾 → 首」
+  const cells = cars.slice().reverse().map(c =>
+    `<div class="tcar ${c.damaged ? 'dmg' : ''}" title="${CAR_TYPES[c.type].name}${c.wid ? ' · ' + WEAPONS[c.wid].name + ' LV' + c.wlv : ''}${c.paxMode ? ' · 载人' : ''}${c.damaged ? ' · 受损' : ''}" style="--cc:${c.paxMode ? CAR_COLORS.habitat : CAR_COLORS[c.type]}">${tcarGlyph(c)}</div>`
   ).join('');
   tag.innerHTML = `<div class="ttitle">晨昏号 · LV${tr.engineLv}${status}</div>
-    <div class="loco">${LOCO_ICON}</div>
-    <div class="consist ${cars.length > 6 ? 'r3' : ''}">${cells}</div>`;
+    <div class="tstrip">${cells}<div class="tloco">${LOCO_ICON}</div></div>
+    <div class="tmag"></div>`;
 }
 
 /* 研发/加速按钮统一绑定 */
 function bindTechActions(root){
-  root.querySelectorAll('[data-tech]').forEach(b => b.onclick = () => {
+  root.querySelectorAll('[data-tech]').forEach(b => b.onclick = () => btnConfirm(b, () => {
     if (researchTech(b.dataset.tech)){
       showToast(`研发立项:<b>${TRAIN_TECHS[b.dataset.tech].name}</b> · 工期 ${fmtDuration(save.techQueue.dur)}`, {sfx:'confirm', say:'Research started.'});
       renderTrainCard();
     } else sfx('err');
-  });
-  root.querySelectorAll('[data-taccel]').forEach(b => b.onclick = () => {
+  }));
+  root.querySelectorAll('[data-taccel]').forEach(b => b.onclick = () => btnConfirm(b, () => {
     if (save.techQueue && accelQueue(save.techQueue)){ tickQueues(); renderTrainCard(); } else sfx('err');
-  });
-  root.querySelectorAll('[data-uaccel]').forEach(b => b.onclick = () => {
+  }));
+  root.querySelectorAll('[data-uaccel]').forEach(b => b.onclick = () => btnConfirm(b, () => {
     if (save.upgrade && accelQueue(save.upgrade)){ tickQueues(); renderTrainCard(); } else sfx('err');
-  });
+  }));
 }
 
 /* 车厢库:存放在本星锚地的替换车厢,可免费重新挂载 */
@@ -662,11 +697,17 @@ function refreshTrainDynamic(){
   const cbtn = $('t-collect');
   if (cbtn){
     const info = tr.status === 'docked' ? collectInfo(tr.sys) : null;
-    const can = info && info.avail > 1 && info.cdLeft <= 0 && info.cap > 0;
+    const can = info && info.avail > 1 && info.cdLeft <= 0 && info.space > 0;
     cbtn.disabled = !can;
     cbtn.textContent = tr.status !== 'docked' ? '航行中无法收取'
       : info.cdLeft > 0 ? `装载冷却 · ${fmtDuration(info.cdLeft)}`
       : info.avail <= 1 ? '本星系仓内无资源'
-      : `收取本星系资源(上限 ${fmtNum(info.cap)})`;
+      : info.space <= 0 ? '货舱已满 —— 先卸货或入库'
+      : `收取本星系资源(货舱余位 ${fmtNum(info.space)})`;
+  }
+  const bbtn = $('t-bank');
+  if (bbtn){
+    bbtn.disabled = !(holdTotal() >= 1 && canBankHere());
+    bbtn.textContent = holdTotal() >= 1 ? `货舱入库金库(${fmtNum(holdTotal())})` : '货舱为空';
   }
 }

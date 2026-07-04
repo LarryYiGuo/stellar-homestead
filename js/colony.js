@@ -1,6 +1,6 @@
 /* ============================================================
-   殖民区划与建筑 — 状态机
-   全自动开辟/建造(同一星球同时只施工一项,真实时间推进);
+   殖民区划与建筑 v4 — 玩家亲手规划
+   区划/建筑由玩家选择开工(消耗金库资源,同一星球同时一项);
    列车驻留本星系 → 建设速度 ×2(商贸加速);注资 → 立即完工
    ============================================================ */
 
@@ -25,11 +25,10 @@ function maxSlotsOf(p){
     default:      return Math.max(4,  Math.min(12, Math.round(9 * Math.pow(r, 0.9))));
   }
 }
-/* 区划位随开发等级 1/5 → 5/5 逐步解锁 */
+/* 区划位:建立殖民地即全额可排,节奏由递增成本控制 */
 function unlockedSlots(p){
-  const lv = devLevel(p);
-  if (lv === 0) return 0;
-  return Math.ceil(maxSlotsOf(p) * lv / MAX_LEVEL) + moonPortSlots(p);   // 卫星港=已建立即全额可用
+  if (!save.est[p.key]) return 0;
+  return maxSlotsOf(p) + moonPortSlots(p);   // 卫星港=已建立即全额可用
 }
 /* 类地化改造:仅火星类岩石行星(标准带 + rocky),卫星与温室星均不可;严酷无法改造 */
 function canTerraform(p){
@@ -45,13 +44,14 @@ function terraformPlanet(key){
   persistSave();
   return true;
 }
-/* 居住承载:全银河非居住区划总数 ≤ 居住区划 ×2,约束扩张 */
+/* 居住承载:全银河非居住区划总数(含在建)≤ 居住区划 ×2 + 4,约束扩张方向 */
 function habCapacityInfo(){
   let hab = 0, other = 0;
   for (const key in save.colony)
     for (const d of save.colony[key].districts)
-      if (dDone(d)) (d.type === 'habitation' ? hab++ : other++);
-  return { hab, other, limit: hab * 2, ok: other <= hab * 2 };
+      (d.type === 'habitation' ? hab++ : other++);
+  const limit = hab * 2 + 4;
+  return { hab, other, limit, ok: other <= limit };
 }
 /* 月球军工前置:第一个军工区必须建在卫星上 */
 function moonArsenalExists(){
@@ -105,17 +105,86 @@ function allowedDistricts(p){
   }
   return list;
 }
-function pickDistrictType(p, st, habOnly){
-  let allowed = allowedDistricts(p);
-  if (habOnly) allowed = allowed.filter(([t]) => t === 'habitation');   // 居住承载触顶
+function pickDistrictType(p, st){        // 仅用于旧档区划类型修正
+  const allowed = allowedDistricts(p);
   if (!allowed.length) return null;
   const existing = st.districts.map(d => d.type);
-  let pool = allowed.filter(([t]) => !existing.includes(t));   // 先求类型齐全
-  if (!pool.length) pool = allowed;                            // 再允许同类叠开
-  const total = pool.reduce((s, [, w]) => s + w, 0);
-  let r = Math.random() * total;
-  for (const [t, w] of pool){ r -= w; if (r <= 0) return t; }
+  let pool = allowed.filter(([t]) => !existing.includes(t));
+  if (!pool.length) pool = allowed;
   return pool[0][0];
+}
+
+/* ── 玩家开辟区划 ── */
+function districtCost(p, type){          // 成本随本星已建区划数递增
+  const st = colonyState(p);
+  const n = st.districts.length;
+  const cost = { metal: Math.round(DISTRICT_COST_BASE * Math.pow(DISTRICT_COST_GROWTH, n)) };
+  const sec = DISTRICT_TYPES[type] && DISTRICT_TYPES[type].investRes;
+  if (sec && n >= 5) cost[sec] = Math.round(cost.metal * 0.35);   // 第 6 座起需要类型副资源(物流需求)
+  return cost;
+}
+function districtTime(p){
+  const st = colonyState(p);
+  return Math.round(DISTRICT_TIME_BASE * (1 + st.districts.length * DISTRICT_TIME_GROWTH));
+}
+/* 可开辟检查:返回 {ok, why} 供 UI 直接展示 */
+function canStartDistrict(p, type){
+  const st = colonyState(p);
+  if (!save.est[p.key]) return { ok:false, why:'未建立殖民地' };
+  if (activeConstruction(st)) return { ok:false, why:'本星施工位占用中' };
+  if (st.districts.length >= unlockedSlots(p)) return { ok:false, why:'区划位已满' };
+  const allowed = allowedDistricts(p).map(([t]) => t);
+  if (!allowed.includes(type)){
+    if (type === 'arsenal' && !p.moonOf && !moonArsenalExists()) return { ok:false, why:'首个军工区必须建在卫星上' };
+    return { ok:false, why:'环境不允许该区划' };
+  }
+  if (type !== 'habitation'){
+    const cap = habCapacityInfo();
+    if (cap.other + 1 > cap.limit) return { ok:false, why:`居住承载不足(非居住 ${cap.other}/${cap.limit}),先开民生区` };
+  }
+  if (!canAfford(districtCost(p, type))) return { ok:false, why:'金库资源不足' };
+  return { ok:true, why:'' };
+}
+function startDistrict(pKey, type){
+  const p = planetByKey(pKey);
+  if (!p || !DISTRICT_TYPES[type]) return false;
+  const chk = canStartDistrict(p, type);
+  if (!chk.ok) return false;
+  if (!payCost(districtCost(p, type))) return false;
+  const st = colonyState(p);
+  st.districts.push({ type, startAt: Date.now(), dur: districtTime(p), builds: [] });
+  pushLog(`${p.name} 开辟「${DISTRICT_TYPES[type].name}」,工期 ${fmtDuration(districtTime(p))}`);
+  persistSave();
+  return true;
+}
+/* ── 玩家建造建筑 ── */
+function canStartBuilding(p, d, id){
+  const def = BUILDINGS[id];
+  const st = colonyState(p);
+  if (!def || def.district !== d.type) return { ok:false, why:'区划类型不符' };
+  if (!dDone(d)) return { ok:false, why:'区划尚未建成' };
+  if (d.builds.length >= BUILDS_PER_DISTRICT) return { ok:false, why:'该区划建筑位已满' };
+  if (builtIds(st).includes(id)) return { ok:false, why:'本星已建造' };
+  if (activeConstruction(st)) return { ok:false, why:'本星施工位占用中' };
+  const conds = buildingCond(p, def);
+  const bad = conds.find(c => !c.met);
+  if (bad) return { ok:false, why:bad.text };
+  if (!canAfford(def.cost || {})) return { ok:false, why:'金库资源不足' };
+  return { ok:true, why:'' };
+}
+function startBuilding(pKey, dIdx, id){
+  const p = planetByKey(pKey);
+  if (!p) return false;
+  const st = colonyState(p);
+  const d = st.districts[dIdx];
+  if (!d) return false;
+  const chk = canStartBuilding(p, d, id);
+  if (!chk.ok) return false;
+  if (!payCost(BUILDINGS[id].cost || {})) return false;
+  d.builds.push({ id, startAt: Date.now(), dur: BUILDINGS[id].time });
+  pushLog(`${p.name} 开工「${BUILDINGS[id].name}」,工期 ${fmtDuration(BUILDINGS[id].time)}`);
+  persistSave();
+  return true;
 }
 /* 旧档迁移:已存在但环境不允许的区划 → 就地改建为允许类型(清空其建筑) */
 function fixDistrictTypes(p, st){
@@ -145,16 +214,17 @@ function builtIds(st){
   for (const d of st.districts) for (const b of d.builds) ids.push(b.id);
   return ids;
 }
-/* 该区划的下一候选建筑(含条件未满足的,用于展示) */
-function nextBuildingFor(p, st, d){
+/* 该区划的可建建筑列表(含条件未满足的,用于展示与玩家点建) */
+function buildingChoicesFor(p, st, d){
   const used = builtIds(st);
+  const out = [];
   for (const id in BUILDINGS){
     const def = BUILDINGS[id];
     if (def.district !== d.type || used.includes(id)) continue;
     const conds = buildingCond(p, def);
-    return { id, def, ready: conds.every(c => c.met), conds };
+    out.push({ id, def, ready: conds.every(c => c.met), conds });
   }
-  return null;
+  return out;
 }
 
 /* 当前施工项(全星球同时只一项) */
@@ -168,20 +238,20 @@ function activeConstruction(st){
   return null;
 }
 
-/* 注资完工:费用随星球已建成结构数指数上升;需列车驻留本星系 */
+/* 注资完工:费用约为建造成本的 2 倍,随星球规模温和上升;需列车驻留本星系 */
 function investCost(p, st){
   let done = 0;
   for (const d of st.districts){
     if (dDone(d)) done++;
     for (const b of d.builds) if (dDone(b)) done++;
   }
-  const base = Math.round(500 * Math.pow(2.2, Math.min(done, 14)));   // 封顶,避免后期注资价格失真
+  const base = Math.round(200 * Math.pow(1.25, Math.min(done, 18)));
   const act = activeConstruction(st);
   const cost = { metal: base };
   if (act){
     const sec = DISTRICT_TYPES[act.type].investRes;
-    if (sec) cost[sec] = Math.round(base * 0.6);
-    else cost.metal = Math.round(base * 1.5);   // 商贸区:纯金属注资
+    if (sec) cost[sec] = Math.round(base * 0.5);
+    else cost.metal = Math.round(base * 1.4);   // 商贸区:纯金属注资
   }
   return cost;
 }
@@ -215,38 +285,11 @@ function colonyTick(){
         for (const b of d.builds) if (!dDone(b)) b.startAt -= 1000;
       }
     }
-    // 竣工播报
+    // 竣工播报(建设本身由玩家开工,不再自动排队)
     for (const d of st.districts){
       if (dDone(d) && !d.ann){ d.ann = 1; events.push(`<b>${p.name}</b> · ${DISTRICT_TYPES[d.type].name} 开辟完成`); }
       for (const b of d.builds)
         if (dDone(b) && !b.ann){ b.ann = 1; events.push(`<b>${p.name}</b> · 「${BUILDINGS[b.id].name}」落成 —— ${BUILDINGS[b.id].desc}`); }
-    }
-    // 自动开工(一次一项):先开区划,后建建筑
-    if (!activeConstruction(st)){
-      if (st.districts.length < unlockedSlots(p)){
-        // 居住承载触顶时,只允许开辟民生区
-        const cap = habCapacityInfo();
-        const habOnly = cap.other + 1 > cap.limit;
-        const nt = pickDistrictType(p, st, habOnly);
-        if (nt){
-          st.districts.push({
-            type: nt,
-            startAt: Date.now(), dur: Math.round(240 * (1 + st.districts.length * 0.4)),
-            builds: [],
-          });
-          persistSave();
-        }
-      } else {
-        for (const d of st.districts){
-          if (!dDone(d) || d.builds.length >= BUILDS_PER_DISTRICT) continue;
-          const next = nextBuildingFor(p, st, d);
-          if (next && next.ready){
-            d.builds.push({ id: next.id, startAt: Date.now(), dur: next.def.time });
-            persistSave();
-            break;
-          }
-        }
-      }
     }
   }
   if (events.length){

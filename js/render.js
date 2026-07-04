@@ -72,31 +72,40 @@ function initRenderer(){
 /* ============================================================
    银河系总图
    ============================================================ */
+/* 银心远置:垦曦星区位于旋臂外侧(猎户臂),不在银心 */
+const GC = { x: -118, y: -1, z: 66 };   // 与星系节点近乎同一平面,避免"漂浮"视差
 function buildGalaxyScene(){
   galaxyScene = new THREE.Scene();
   addStarfield(galaxyScene);
 
   galaxyGroup = new THREE.Group();
+  galaxyGroup.position.set(GC.x, GC.y, GC.z);
   galaxyScene.add(galaxyGroup);
 
-  // 旋臂点云(2 条对数螺旋臂 + 核球)
-  const N = 9000;
+  // 旋臂点云(2 条对数螺旋臂 + 核球),局部坐标以银心为原点;
+  // 0 号臂相位校准:在 r=|GC| 处精确扫过玩家星区(原点)
+  const N = 20000;
+  const gcR = Math.hypot(GC.x, GC.z);
+  const SPIN = 0.07;
+  const toOrigin = Math.atan2(-GC.z, -GC.x);
+  const phase0 = toOrigin - gcR * SPIN;
   const pos = new Float32Array(N*3), col = new Float32Array(N*3);
   for (let i=0;i<N;i++){
     let x, y, z, r;
-    if (i < N*0.18){                       // 核球
-      r = Math.pow(Math.random(), 2) * 7;
+    if (i < N*0.2){                        // 核球
+      r = Math.pow(Math.random(), 2) * 16;
       const u = Math.random()*2-1, ph = Math.random()*Math.PI*2, s = Math.sqrt(1-u*u);
-      x = s*Math.cos(ph)*r; z = s*Math.sin(ph)*r; y = u*r*0.55;
-    } else {                                // 旋臂
-      r = 4 + Math.pow(Math.random(), 0.72) * 58;
-      const arm = (i % 2) * Math.PI;
-      const ang = r*0.26 + arm + (Math.random()-0.5)*(0.5 + 7/r);
+      x = s*Math.cos(ph)*r; z = s*Math.sin(ph)*r; y = u*r*0.5;
+    } else {                                // 旋臂:高斯截面,中脊密、边缘散 —— 星系嵌在带里
+      r = 12 + Math.pow(Math.random(), 0.68) * 175;
+      const arm = (i % 2) * Math.PI + phase0;
+      const g = (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;   // 近似高斯 [-1,1]
+      const ang = r*SPIN + arm + g * (0.38 + 20/r);
       x = Math.cos(ang)*r; z = Math.sin(ang)*r;
-      y = (Math.random()-0.5) * 1.8 * Math.max(0.22, 1 - r/64);
+      y = (Math.random()-0.5) * 3.2 * Math.max(0.18, 1 - r/185);
     }
     pos.set([x, y, z], i*3);
-    const t = Math.min(1, r/56);
+    const t = Math.min(1, r/165);
     const warm = [1.0, 0.85, 0.62], cool = [0.55, 0.68, 1.0];
     const b = 0.25 + Math.random()*0.75;
     col.set([ (warm[0]*(1-t)+cool[0]*t)*b, (warm[1]*(1-t)+cool[1]*t)*b, (warm[2]*(1-t)+cool[2]*t)*b ], i*3);
@@ -105,26 +114,44 @@ function buildGalaxyScene(){
   gg.setAttribute('position', new THREE.BufferAttribute(pos,3));
   gg.setAttribute('color', new THREE.BufferAttribute(col,3));
   galaxyGroup.add(new THREE.Points(gg, new THREE.PointsMaterial({
-    size:1.3, vertexColors:true, sizeAttenuation:false, transparent:true, opacity:0.8,
+    size:1.35, vertexColors:true, sizeAttenuation:false, transparent:true, opacity:0.85,
     depthWrite:false, blending:THREE.AdditiveBlending })));
 
-  // 银心辉光
+  // 银心辉光(随银心远置)
   const core = new THREE.Sprite(new THREE.SpriteMaterial({
     map: makeGlowTexture('rgba(255,225,170,0.9)','rgba(255,150,60,0.18)'),
     blending:THREE.AdditiveBlending, depthWrite:false, transparent:true }));
-  core.scale.setScalar(22);
-  galaxyScene.add(core);
+  core.scale.setScalar(34);
+  galaxyGroup.add(core);
 
-  // 星系节点
+  // 星图区域环:以垦曦(原点)为中心 —— 近域 / 边域 / 深空 的规划参考线
+  for (const [rr, colr, op] of [[30,'#3ecf8e',0.30],[65,'#f59e0b',0.22],[115,'#fb923c',0.16]]){
+    const pts = [];
+    for (let a = 0; a <= 128; a++){
+      const th = a / 128 * Math.PI * 2;
+      pts.push(new THREE.Vector3(Math.cos(th)*rr, 0, Math.sin(th)*rr));
+    }
+    const ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: new THREE.Color(colr), transparent:true, opacity: op }));
+    galaxyScene.add(ring);
+  }
+
+  // 星系节点:星点 + 平面环 + 收敛光晕(状态每秒刷新:锁定暗淡/殖民绿环/Boss 红环)
   sysNodes.length = 0;
   for (const sys of SYSTEMS){
     const colHex = new THREE.Color(sys.nodeCol);
     const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.55, 24, 24),
-      new THREE.MeshBasicMaterial({ color: colHex }));
+      new THREE.SphereGeometry(0.42, 20, 20),
+      new THREE.MeshBasicMaterial({ color: colHex, transparent:true }));
     mesh.position.set(sys.pos[0], 0, sys.pos[1]);
     mesh.userData.sysId = sys.id;
     galaxyScene.add(mesh);
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.95, 1.1, 40),
+      new THREE.MeshBasicMaterial({ color: colHex, transparent:true, opacity:0.5, side:THREE.DoubleSide, depthWrite:false }));
+    ring.rotation.x = -Math.PI/2;
+    ring.position.copy(mesh.position);
+    galaxyScene.add(ring);
     // 拾取热区(透明大球)
     const hit = new THREE.Mesh(
       new THREE.SphereGeometry(1.7, 8, 8),
@@ -136,9 +163,9 @@ function buildGalaxyScene(){
       map: makeGlowTexture(`rgba(${colHex.r*255|0},${colHex.g*255|0},${colHex.b*255|0},0.85)`, 'rgba(0,0,0,0)'),
       blending:THREE.AdditiveBlending, depthWrite:false, transparent:true }));
     glow.position.copy(mesh.position);
-    glow.scale.setScalar(4.5);
+    glow.scale.setScalar(2.6);
     galaxyScene.add(glow);
-    sysNodes.push({ sys, mesh, hit, glow, pulse: Math.random()*6.28 });
+    sysNodes.push({ sys, mesh, ring, hit, glow, pulse: Math.random()*6.28 });
   }
 
   // 列车标记 + 航线
@@ -206,11 +233,26 @@ function nodePos(sysId){
   return new THREE.Vector3(s.pos[0], 0, s.pos[1]);
 }
 
+let _nodeStateAt = 0;
+function refreshNodeStates(){                 // 每秒:锁定暗淡 / 殖民绿环 / Boss 红环
+  for (const n of sysNodes){
+    const unlocked = sysUnlocked(n.sys);
+    const colonized = sysHasColony(n.sys.id);
+    const bossAlive = typeof BOSSES !== 'undefined' && BOSSES[n.sys.id] && !save.bossKills[n.sys.id];
+    n.locked = !unlocked;
+    n.mesh.material.opacity = unlocked ? 1 : 0.3;
+    n.glow.material.opacity = unlocked ? 0.9 : 0.12;
+    n.ring.material.color.set(colonized ? '#3ecf8e' : bossAlive ? '#ef4444' : n.sys.nodeCol);
+    n.ring.material.opacity = !unlocked ? 0.14 : colonized ? 0.85 : bossAlive ? 0.7 : 0.5;
+  }
+}
 function updateGalaxy(t){
-  if (galaxyGroup) galaxyGroup.rotation.y = t * 0.004;
+  if (galaxyGroup) galaxyGroup.rotation.y = t * 0.0004;   // 极缓自转(绕银心)
+  if (t - _nodeStateAt > 1){ _nodeStateAt = t; refreshNodeStates(); }
   for (const n of sysNodes){
     const k = 1 + 0.18 * Math.sin(t*1.8 + n.pulse);
-    n.glow.scale.setScalar((n.sys.id === curTrainSys() ? 5.5 : 4.5) * k);
+    n.glow.scale.setScalar((n.sys.id === curTrainSys() ? 4.6 : 2.6) * (n.locked ? 0.8 : k));
+    if (n.sys.id === curTrainSys()) n.ring.scale.setScalar(1 + 0.08 * Math.sin(t*2.2));
   }
   if (routeHistGroup) routeHistGroup.visible = !!(save.ui && save.ui.routes);
   // 列车位置 + 当前航线流光(随引擎成长更醒目)

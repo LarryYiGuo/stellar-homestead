@@ -124,7 +124,7 @@ function collectCd(){
     s + (c.type === 'habitat' && carOk(c) ? CAR_TYPES.habitat.cdRed * carEff(c) : 0), 0);
   const base = (COLLECT_CD_BASE - habRed - COLONY_FX.cd)
              * Math.pow(0.92, techLv('logi'));               // 研发:物流调度
-  return (1 - officerFx().cd) * Math.max(30, Math.round(base));
+  return (1 - officerFx().cd) * Math.max(10, Math.round(base));
 }
 function trainSpeed(){                      // 单位/分钟;引擎受损减半;研发:曲率精调
   return (1 + officerFx().speed) * engineSpeed(save.train.engineLv) * (engineDamaged() ? 0.5 : 1) * (1 + 0.1 * techLv('warp'));
@@ -144,9 +144,9 @@ function sysUnlocked(sys){ return sysUnlockConds(sys).every(c => c.met); }
 function sysHasColony(sysId){ return planetsOf(sysId).some(p => save.est[p.key]); }
 function seedCryoIndex(){ return save.train.cars.findIndex(c => c.type === 'cryo' && !c.damaged); }
 
-function travelTimeTo(sysId){            // 秒;×2 = 跨星系巡航实效半速(加减速段占比大,星内转移不受影响)
+function travelTimeTo(sysId){            // 秒
   const d = sysDist(save.train.sys, sysId);
-  return d / trainSpeed() * 60 * 2;
+  return d / trainSpeed() * 60;
 }
 
 /* ============================================================
@@ -246,10 +246,10 @@ function boardMigrants(p){               // 装载移民(需停靠该星 + 满�
   if (!dockedAtPlanet(p) || !canEmigrate(p)) return 0;
   const info = migInfo(p);
   const space = paxCapacity() - save.train.pax;
-  const take = Math.min(info.pool, space);
+  const take = Math.min(info.pool, space, Math.floor(popOf(p)));
   if (take <= 0) return 0;
   save.mig[p.key].pool -= take;
-  save.popExtra[p.key] = (save.popExtra[p.key] || 0) - take;
+  save.pop[p.key] = Math.max(0, (save.pop[p.key] || 0) - take);
   save.train.pax += take;
   pushLog(`${p.name} 登车移民 ${fmtNum(take)} 人(随车 ${fmtNum(save.train.pax)})`);
   persistSave();
@@ -259,7 +259,9 @@ function unloadMigrants(p){              // 卸载移民(需停靠该星,已殖�
   if (!dockedAtPlanet(p) || p.role !== 'hab' || !save.est[p.key]) return 0;
   const move = save.train.pax;
   if (move <= 0) return 0;
-  save.popExtra[p.key] = (save.popExtra[p.key] || 0) + move;
+  save.pop[p.key] = (save.pop[p.key] || 0) + move;
+  if (!save.settled) save.settled = {};
+  save.settled[p.key] = (save.settled[p.key] || 0) + move;   // 落户驱动居住星开发
   save.train.pax = 0;
   addInfluence(Math.ceil(move / 1000) * INF_FX.settlePer1k);   // 安置移民影响力
   pushLog(`${fmtNum(move)} 名移民在 ${p.name} 落户`);
@@ -325,40 +327,95 @@ function checkArrival(){
   return { sys, firstVisit, raidPending };
 }
 
-/* ── 靠站收取资源 ── */
+/* ── 货舱(实体载货):收取 → 货舱;停靠殖民星卸货补给 / 星港入库金库 ── */
+function holdOf(){ if (!save.train.hold) save.train.hold = {}; return save.train.hold; }
+function holdTotal(){ const h = holdOf(); let s = 0; for (const k in h) s += h[k]; return s; }
+function holdSpace(){ return Math.max(0, cargoCap() - holdTotal()); }
+
+/* ── 靠站收取资源(从资源星本地仓装入货舱) ── */
 function collectInfo(sysId){
   const planets = planetsOf(sysId).filter(p => p.role === 'res' && devLevel(p) > 0);
   let avail = 0;
   for (const p of planets) avail += resAvail(p);
   const last = save.lastCollect[sysId] || 0;
   const cdLeft = Math.max(0, collectCd() - (Date.now() - last) / 1000);
-  return { planets, avail, cdLeft, cap: cargoCap() };
+  return { planets, avail, cdLeft, cap: cargoCap(), space: holdSpace() };
 }
 function collectSystem(sysId){
   const tr = save.train;
   if (tr.status !== 'docked' || tr.sys !== sysId) return null;
   if (save.pendingRaid) return null;         // 先打完仗再装货
   const info = collectInfo(sysId);
-  if (info.cdLeft > 0 || info.avail <= 0 || info.cap <= 0) return null;
-  const load = Math.min(info.cap, info.avail);
+  if (info.cdLeft > 0 || info.avail <= 0 || info.space <= 0) return null;
+  const hold = holdOf();
   const got = {};
-  let remaining = load;
+  let remaining = info.space;
   for (const p of info.planets){
     if (remaining <= 0) break;
     const take = Math.min(resAvail(p), remaining);
     if (take <= 0) continue;
-    save.taken[p.key] = (save.taken[p.key] || 0) + take;
-    const gain = Math.round(take * collectBuff() * COLONY_FX.amt);
-    save.treasury[p.res.key] = (save.treasury[p.res.key] || 0) + gain;
+    pstoreOf(p.key)[p.res.key] -= take;
+    if (!save.exported) save.exported = {};
+    save.exported[p.key] = (save.exported[p.key] || 0) + take;   // 出口驱动资源星开发
+    const gain = Math.round(take * collectBuff() * COLONY_FX.amt);   // 工程舱现场提纯
+    hold[p.res.key] = (hold[p.res.key] || 0) + gain;
     got[p.res.key] = (got[p.res.key] || 0) + gain;
     remaining -= take;
   }
   save.lastCollect[sysId] = Date.now();
   addInfluence(INF_FX.collect);                      // 物流运转影响力
   const summary = Object.entries(got).map(([k,v]) => `${RESOURCES[k].name} ${fmtNum(v)}`).join(' · ');
-  pushLog(`于 ${sysById(sysId).name} 收取资源:${summary || '0'}`);
+  pushLog(`于 ${sysById(sysId).name} 收取资源入货舱:${summary || '0'}`);
   persistSave();
   return got;
+}
+/* 卸货补给:货舱 → 停靠殖民星本地仓(只卸消耗品:消费品/生命支持/能源) */
+function unloadSupply(pKey){
+  const p = planetByKey(pKey);
+  if (!p || !save.est[pKey] || !dockedAtPlanet(p) || save.pendingRaid) return null;
+  const hold = holdOf();
+  const st = pstoreOf(pKey);
+  const moved = {};
+  for (const k of ['chem','ice','he3']){
+    const q = Math.floor(hold[k] || 0);
+    if (q <= 0) continue;
+    st[k] = (st[k] || 0) + q;
+    moved[k] = q;
+    delete hold[k];
+  }
+  if (!Object.keys(moved).length) return null;
+  addInfluence(INF_FX.collect);
+  const summary = Object.entries(moved).map(([k,v]) => `${RESOURCES[k].name} ${fmtNum(v)}`).join(' · ');
+  pushLog(`${p.name} 补给卸货:${summary}`);
+  persistSave();
+  return moved;
+}
+/* 入库金库:货舱 → 金库(需停靠锚地有建成星港,或母港) */
+function canBankHere(){
+  const tr = save.train;
+  if (tr.status !== 'docked' || localTransit() || save.pendingRaid) return false;
+  const anchor = anchorageOf(tr.planet, tr.sys);
+  return planetsOf(tr.sys).some(p => anchorageOf(p.id, tr.sys) === anchor
+    && (portDone(p.key) || p.key === save.homePort));
+}
+function bankHold(){
+  if (!canBankHere()) return null;
+  const hold = holdOf();
+  const moved = {};
+  for (const k in hold){
+    const q = Math.floor(hold[k] || 0);
+    if (q <= 0) continue;
+    save.treasury[k] = (save.treasury[k] || 0) + q;
+    moved[k] = q;
+  }
+  save.train.hold = {};
+  if (!Object.keys(moved).length) return null;
+  if (!save.flags) save.flags = {};
+  save.flags.banked = 1;                     // 新手航路:首次入库
+  const summary = Object.entries(moved).map(([k,v]) => `${RESOURCES[k].name} ${fmtNum(v)}`).join(' · ');
+  pushLog(`货舱入库金库:${summary}`);
+  persistSave();
+  return moved;
 }
 
 /* ── 列车扩展 / 升级 / 修复 ── */

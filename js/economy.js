@@ -1,14 +1,34 @@
 /* ============================================================
-   经济模型 — 开发等级 / 人口 / 资源 / 协同 / 文明指数
-   全部由时间戳确定性推算,离线进度天然成立
+   经济模型 v4 — 「物流驱动 × 殖民自生长」
+   开发度 = 建成区划/建筑 + 人口里程碑 + 出口/落户(不再随时间)
+   人口 = 显式状态,逻辑斯谛增长,吃消费品/生命支持
+   产出 → 本地仓(pstore);消耗 ← 本地仓;缺口 = 物流需求
    ============================================================ */
 
+/* ── 开发度:全部来自玩家可影响的量 ── */
+function popTier(p){                     // 已达成的人口里程碑数(消耗/开发共用)
+  const pop = popOf(p);
+  let t = 0;
+  for (let i = 1; i < POP_MILESTONES.length; i++) if (pop >= POP_MILESTONES[i]) t = i;
+  return t;
+}
 function devPoints(p){
-  const t = save.est[p.key];
-  if (!t) return -1;
-  // 资源星按工业开发推进,不吃宜居度惩罚(速率下限 0.8,约 75 天满级);居住星按宜居度
-  const k = p.role === 'res' ? Math.max(0.8, p.habit) : p.habit;
-  return Math.max(0, (Date.now() - t) / 1000) * k;
+  if (!save.est[p.key]) return -1;
+  const st = save.colony && save.colony[p.key];
+  let pts = 0;
+  if (st) for (const d of st.districts){
+    if (dDone(d)) pts += DEV_PER_DISTRICT;
+    for (const b of d.builds) if (dDone(b)) pts += DEV_PER_BUILDING;
+  }
+  if (p.role === 'hab'){
+    pts += popTier(p) * DEV_PER_POP_TIER;
+    const settled = (save.settled && save.settled[p.key]) || 0;
+    pts += SETTLE_DEV_K * Math.log2(1 + settled / SETTLE_DEV_BASE);
+  } else {
+    const exported = (save.exported && save.exported[p.key]) || 0;
+    pts += EXPORT_DEV_K * Math.log2(1 + exported / EXPORT_DEV_BASE);
+  }
+  return pts;
 }
 function devLevel(p){
   const pts = devPoints(p);
@@ -52,7 +72,6 @@ function hardCondList(p){
 }
 function condList(p){
   const conds = hardCondList(p);
-  // 建立殖民地的后勤条件:列车停靠本星轨道 + 随车移民 + 居住承载
   conds.push({
     met: dockedAtPlanet(p),
     text: '星际列车停靠本星轨道(卫星/母星泊位通用)',
@@ -60,11 +79,6 @@ function condList(p){
   conds.push({
     met: save.train.pax >= ESTABLISH_COLONISTS,
     text: `随车移民 ≥ ${fmtNum(ESTABLISH_COLONISTS)}(当前 ${fmtNum(save.train.pax)})`,
-  });
-  const cap = habCapacityInfo();
-  conds.push({
-    met: cap.ok,
-    text: `居住承载:非居住区划 ${cap.other} ≤ 居住区划×2(${cap.limit})`,
   });
   return conds;
 }
@@ -91,73 +105,160 @@ function workforceBuff(){
   }
   return _wfVal;
 }
-function capBuff(){ return Math.min(1.6, 1 + 0.02 * sumLevels('res')); }   // 20 级体系:系数 ÷4,封顶 ×1.6(生态承载有极限)
-function rateBuff(){ return 1 + 0.03 * sumLevels('hab'); }                 // 20 级体系:系数 ÷4,等效原节奏
+function capBuff(){ return Math.min(1.6, 1 + 0.02 * sumLevels('res')); }   // 资源体系反哺承载
+function rateBuff(){ return 1 + 0.03 * sumLevels('hab'); }                 // 居住体系反哺产能
 /* 剧情《来自地球的歌》的人口/产率加成仅作用于垦曦全系(初始星系) */
 function storyCap(p){ return p.sysId === 'kenxi' && save.story ? save.story.buffs.cap : 1; }
 function storyRate(p){ return p.sysId === 'kenxi' && save.story ? save.story.buffs.rate : 1; }
 
+/* ── 人口:显式状态 + 承载 ── */
 function popOf(p){
   if (p.role !== 'hab') return 0;
-  const lv = devLevel(p);
-  if (lv === 0) return 0;
-  const extra = (save.popExtra && save.popExtra[p.key]) || 0;   // 迁入/迁出的人口偏移
-  const mult = p.capScale * capBuff() * colonyCap(p) * storyCap(p);
-  let base;
-  if (lv >= MAX_LEVEL){
-    // 环境承载力:最终阶段渐近逼近上限,越接近增长越慢
-    const a = POP_MILESTONES[MAX_LEVEL], b = POP_MILESTONES[MAX_LEVEL + 1];
-    const tIn = Math.max(0, devPoints(p) - LEVELS[MAX_LEVEL].th);
-    base = b - (b - a) * Math.exp(-tIn / 600000);   // 满级后约一周逼近生态极限
-  } else {
-    const prog = devProgress(p);
-    const a = POP_MILESTONES[lv], bb = POP_MILESTONES[lv+1];
-    base = a * Math.pow(bb/a, prog);
-  }
-  return Math.max(0, base * mult + extra);
+  return (save.pop && save.pop[p.key]) || 0;
+}
+function habDistrictCount(p){
+  const st = save.colony && save.colony[p.key];
+  let n = 0;
+  if (st) for (const d of st.districts) if (d.type === 'habitation' && dDone(d)) n++;
+  return n;
 }
 function popCapOf(p){
-  if (p.role !== 'hab') return 0;
-  const lv = devLevel(p);
-  if (lv === 0) return 0;
-  return POP_MILESTONES[lv+1] * p.capScale * capBuff() * colonyCap(p) * storyCap(p);
+  if (p.role !== 'hab' || !save.est[p.key]) return 0;
+  const cs = p.capScale || 0.3;
+  return (POP_CAP_BASE + POP_CAP_PER_HAB * habDistrictCount(p)) * cs
+       * colonyCap(p) * capBuff() * storyCap(p);
 }
-function resOf(p){                       // 累计产出(含已收取部分)
-  if (p.role !== 'res') return 0;
-  const lv = devLevel(p);
-  if (lv === 0) return 0;
-  const rich = p.res.rich * resRegionMult(p) * colonyProd(p) * storyRate(p) * moonPortMult(p);   // 区域 × 资源层级 × 卫星港再分配
-  // 产率模型:满级前从 6% 线性爬坡到 100% 满级率(无段初锯齿),满级后恒定 RES_RATE_MAX
-  const T = LEVELS[MAX_LEVEL].th;
-  const pts = devPoints(p);
-  const t = Math.min(pts, T);
-  let cum = RES_RATE_MAX * (0.06 * t + 0.47 * t * t / T);   // ∫(0.06+0.94·t/T)dt
-  if (pts > T) cum += (pts - T) * RES_RATE_MAX;
-  return cum * rich * rateBuff() * workforceBuff() * RES_SCALE;   // 劳动力红利:人口反哺产能
+/* 人口增长率(/分,含全部修正;供 tick 与 UI 共用) */
+function popGrowthInfo(p){
+  const pop = popOf(p), cap = popCapOf(p);
+  if (pop <= 0 || cap <= 0) return { rate:0, mults:[], blocked:'' };
+  const sh = shortOf(p);
+  if (sh.chem) return { rate:0, mults:[], blocked:'消费品断供(化合物)' };
+  if (sh.ice)  return { rate: -pop * 0.005, mults:[], blocked:'生命支持断供(水冰)' };
+  const mults = [];
+  let m = p.habit;
+  mults.push(['宜居度', p.habit]);
+  const st = pstoreOf(p.key);
+  if ((st.chem || 0) > consumptionOf(p).chem * 30){ m *= FOOD_SURPLUS_MULT; mults.push(['物资盈余', FOOD_SURPLUS_MULT]); }
+  const dev = 1 + officerFx().dev;
+  if (dev > 1){ m *= dev; mults.push(['生态学家', dev]); }
+  const logistic = Math.max(-0.5, 1 - pop / cap);
+  return { rate: pop * POP_GROWTH_PER_MIN * m * logistic, mults, blocked:'' };
 }
+
+/* ── 本地仓与收支 ── */
+function pstoreOf(key){
+  if (!save.pstore) save.pstore = {};
+  if (!save.pstore[key]) save.pstore[key] = {};
+  return save.pstore[key];
+}
+function tradeDistrictCount(p){
+  const st = save.colony && save.colony[p.key];
+  let n = 0;
+  if (st) for (const d of st.districts) if (d.type === 'trade' && dDone(d)) n++;
+  return n;
+}
+function storeCapOf(p){ return STORE_CAP_BASE + STORE_CAP_PER_TRADE * tradeDistrictCount(p); }
+function poweredDistrictCount(p){        // 需能源的区划(工/研/军),首座自供
+  const st = save.colony && save.colony[p.key];
+  let n = 0;
+  if (st) for (const d of st.districts)
+    if (dDone(d) && (d.type === 'industry' || d.type === 'research' || d.type === 'arsenal')) n++;
+  return Math.max(0, n - 1);
+}
+/* 每分钟消耗表:消费品(化合物)/ 生命支持(水冰)/ 区划能源(氦-3) */
+function consumptionOf(p){
+  const out = { chem:0, ice:0, he3:0 };
+  if (!save.est[p.key]) return out;
+  if (p.role === 'hab'){
+    const t = popTier(p);
+    if (t > 0){
+      const base = CONSUME_CHEM_K * Math.pow(t, CONSUME_POW);
+      out.chem = base;
+      if (p.habit < CONSUME_ICE_HABIT) out.ice = base * (CONSUME_ICE_HABIT - p.habit) * 3;
+    }
+  }
+  out.he3 = CONSUME_HE3_PER_DISTRICT * poweredDistrictCount(p);
+  return out;
+}
+function shortOf(p){ return (save.short && save.short[p.key]) || {}; }
+function shortageMult(p){                // 能源/生命支持缺口 → 本星产出减半
+  const sh = shortOf(p);
+  return (sh.he3 || sh.ice) ? 0.5 : 1;
+}
+
+/* ── 资源星产出(/分)── */
 function resRateOf(p){
-  if (p.role !== 'res' || devLevel(p) === 0) return 0;
-  const dt = 30;
-  const now = resOf(p);
-  const t0 = save.est[p.key];
-  save.est[p.key] = t0 + dt*1000;
-  const past = resOf(p);
-  save.est[p.key] = t0;
-  return Math.max(0, (now - past) / dt);
+  if (p.role !== 'res' || !save.est[p.key]) return 0;
+  return RES_BASE_PER_MIN * p.res.rich * resRegionMult(p) * colonyProd(p) * moonPortMult(p)
+       * rateBuff() * workforceBuff() * storyRate(p) * shortageMult(p);
 }
-function resAvail(p){                    // 仓内待收取量
+function resAvail(p){                    // 本地仓内本星特产待运量
   if (p.role !== 'res') return 0;
-  return Math.max(0, resOf(p) - (save.taken[p.key] || 0));
+  return Math.floor(pstoreOf(p.key)[p.res.key] || 0);
+}
+
+/* ── 经济主循环:生产 → 消耗 → 人口(时间戳积分,离线封顶) ── */
+function economyTick(){
+  const now = Date.now();
+  if (!save.ecoAt) save.ecoAt = now;
+  let dt = (now - save.ecoAt) / 1000;
+  if (dt <= 0) return;
+  save.ecoAt = now;
+  let eff = 1;
+  if (dt > 120){ dt = Math.min(dt, OFFLINE_CAP_SEC); eff = OFFLINE_EFF; }   // 离线:8h 封顶,效率减半
+  if (!save.short) save.short = {};
+  while (dt > 0){
+    const step = Math.min(dt, 600);      // 分段积分,离线也遵守仓储/缺口
+    dt -= step;
+    const min = step / 60 * eff;
+    for (const p of allPlanets()){
+      if (!save.est[p.key]) continue;
+      const st = pstoreOf(p.key);
+      // ① 生产:特产入本地仓(受仓储上限)
+      if (p.role === 'res'){
+        const cap = storeCapOf(p);
+        const k = p.res.key;
+        st[k] = Math.min(cap, (st[k] || 0) + resRateOf(p) * min);
+      }
+      // ② 消耗:从本地仓扣,记录缺口
+      const need = consumptionOf(p);
+      const sh = {};
+      for (const k of ['chem','ice','he3']){
+        if (need[k] <= 0) continue;
+        const want = need[k] * min;
+        const got = Math.min(want, st[k] || 0);
+        st[k] = (st[k] || 0) - got;
+        if (got < want - 1e-9) sh[k] = 1;
+      }
+      save.short[p.key] = sh;
+      // ③ 人口增长
+      if (p.role === 'hab'){
+        const g = popGrowthInfo(p);
+        if (g.rate !== 0){
+          save.pop[p.key] = Math.max(0, (save.pop[p.key] || 0) + g.rate * min);
+        }
+      }
+    }
+  }
 }
 
 function totalPop(){ let s=0; for (const p of allPlanets()) s += popOf(p); return s; }
-function totalRes(){ let s=0; for (const p of allPlanets()) s += resOf(p); return s; }
+function totalRes(){                     // 文明指数口径:金库 + 全银河仓储 + 枢纽
+  let s = 0;
+  for (const k in save.treasury) s += save.treasury[k] || 0;
+  if (save.pstore) for (const key in save.pstore)
+    for (const k in save.pstore[key]) s += save.pstore[key][k] || 0;
+  if (save.gates) for (const sid in save.gates)
+    for (const k in (save.gates[sid].store || {})) s += save.gates[sid].store[k] || 0;
+  return s;
+}
 function devCountAll(){ let c=0; for (const p of allPlanets()) if (devLevel(p) > 0) c++; return c; }
 
-/* 文明指数 = log10(总人口) + log10(资源储量) + 0.25 × min(居住等级和, 资源等级和) */
+/* 文明指数 = log10(总人口) + log10(资源储量) + 协同 + 剧情/建筑 */
 function civIndex(){
   return Math.log10(1 + totalPop()) + Math.log10(1 + totalRes())
-       + 0.0625 * Math.min(sumLevels('hab'), sumLevels('res'))   // 20 级体系:系数 ÷4
+       + 0.0625 * Math.min(sumLevels('hab'), sumLevels('res'))
        + (save.story ? save.story.buffs.civ : 0)
        + (typeof COLONY_FX !== 'undefined' ? COLONY_FX.civ : 0);
 }

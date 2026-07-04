@@ -1,9 +1,8 @@
 /* ============================================================
    存档层 — window.storage(Claude 环境)优先,localStorage 兜底
-   兼容旧版单星系存档 stellar_homestead_v1 自动迁移
+   v4 玩法纪元:新键清档,不迁移旧档
    ============================================================ */
-const SAVE_KEY = 'stellar_galaxy_v1';
-const OLD_KEY  = 'stellar_homestead_v1';
+const SAVE_KEY = 'stellar_galaxy_v2';
 
 let save = null;
 let storageOK = false;
@@ -28,22 +27,26 @@ const Store = {
 
 function freshSave(){
   return {
-    ver: 2,
+    ver: 4,
     est: {},                 // est[planetKey] = 前哨建立时间戳(ms)
-    taken: {},               // taken[planetKey] = 已收取的资源量
-    treasury: { metal:0, chem:0, he3:0, ice:0, deut:0 },
+    pop: {},                 // pop[planetKey] = 当前人口(显式状态)
+    exported: {},            // exported[planetKey] = 资源星累计出口(驱动开发)
+    settled: {},             // settled[planetKey] = 居住星累计落户(驱动开发)
+    short: {},               // short[planetKey] = 缺口标记 {chem/ice/he3}
+    ecoAt: 0,                // 经济 tick 时间戳
+    treasury: { metal:400, chem:120, he3:0, ice:0, deut:0 },   // 开局启动金,够开第一座区划
     lastCollect: {},         // lastCollect[sysId] = 上次收取时间戳
     visited: { kenxi:true },
     train: {
       sys:'kenxi', status:'docked', from:null, to:null, departAt:0, arriveAt:0,
       planet:'canglan', localTo:null, localArriveAt:0,
-      engineLv: 1, rpLv: 0, pax:0, ammo:30,
+      engineLv: 1, rpLv: 0, pax:0, ammo:30, hold: {},
       cars: [ {type:'engine', clv:1}, {type:'cargo', clv:1}, {type:'general', clv:1, wid:'autogun', wlv:1} ],
     },
-    mig: {}, popExtra: {}, terraformed: {}, depot: {},
+    mig: {}, terraformed: {}, depot: {},
     influence: 0, techQueue: null, upgrade: null,
     routes: {}, ui: { tag: true, routes: false },
-    homePort: 'kenxi/canglan', starport: {}, lines: [], pstore: {}, boostRun: {},
+    homePort: 'kenxi/canglan', starport: {}, lines: [], pstore: {},
     infFrac: 0, portStory: { idx: 0 },
     log: [],
     deck: BASE_DECK.slice(),
@@ -54,31 +57,32 @@ function freshSave(){
     research: 0, tech: {},
     story: null, side: null,
     bgm: true,
-    devScale: 2,
   };
 }
 
 function normalizeSave(){
   if (!save || typeof save !== 'object') save = freshSave();
   const f = freshSave();
-  for (const k of ['est','taken','treasury','lastCollect','visited','log','bossKills'])
+  for (const k of ['est','treasury','lastCollect','visited','log','bossKills'])
     if (!save[k]) save[k] = f[k];
   if (!save.colony) save.colony = {};
   if (typeof save.research !== 'number') save.research = 0;
   if (!save.tech) save.tech = {};
-  for (const k of ['mig','popExtra','terraformed']) if (!save[k]) save[k] = {};
+  for (const k of ['mig','terraformed','pop','exported','settled','short','flags']) if (!save[k]) save[k] = {};
+  if (typeof save.ecoAt !== 'number') save.ecoAt = 0;
+  if (typeof save.tutStep !== 'number') save.tutStep = 0;
+  if (save.tutDone === undefined) save.tutDone = 0;
   if (typeof save.influence !== 'number') save.influence = 0;
   if (!save.routes) save.routes = {};
   if (!save.ui) save.ui = { tag: true, routes: false };
   if (!save.depot) save.depot = {};
   if (!save.homePort) save.homePort = 'kenxi/canglan';
-  for (const k of ['starport','pstore','boostRun','boostAuto','hints','pirateOps','pirateWreck']) if (!save[k]) save[k] = {};
+  for (const k of ['starport','pstore','hints','pirateOps','pirateWreck']) if (!save[k]) save[k] = {};
   if (!Array.isArray(save.armory)) save.armory = [];
   if (!save.officers) save.officers = { owned: [], active: [] };
   save.officers.active = (save.officers.active || []).slice(0, OFFICER_SLOTS);
-  for (const k in save.treasury) if (!isFinite(save.treasury[k])) save.treasury[k] = 0;   // 清洗历史 NaN 污染
+  for (const k in save.treasury) if (!isFinite(save.treasury[k])) save.treasury[k] = 0;   // 清洗 NaN 污染
   if (!isFinite(save.research)) save.research = 0;
-  delete save.boost;   // 旧定时加速制废弃 → 投入制 boostRun
   if (save.gates) for (const sid in save.gates){
     const g = save.gates[sid];
     if (g.collect === undefined) g.collect = 1;
@@ -98,14 +102,8 @@ function normalizeSave(){
   if (!save.gateUnlocked) save.gateUnlocked = 0;
   if (!save.docks) save.docks = {};
   if (save.boarding === undefined) save.boarding = null;
-  // 开发节奏重标(旧档迁移):等比拉伸 est,保持现有等级与进度不变
-  if (save.devScale !== 2){
-    const S = 5184000 / 38880;
-    const now = Date.now();
-    for (const k in save.est) save.est[k] = now - (now - save.est[k]) * S;
-    save.devScale = 2;
-  }
   if (typeof save.train.rpLv !== 'number') save.train.rpLv = 0;
+  if (!save.train.hold) save.train.hold = {};
   for (const c of save.train.cars){
     if (!c.clv) c.clv = 1;
     if (c.paxMode && c.type !== 'cargo') delete c.paxMode;   // 新规:仅运输车厢可改装
@@ -134,28 +132,20 @@ function normalizeSave(){
   if (!save.train) save.train = f.train;
   if (!save.train.cars || !save.train.cars.length) save.train.cars = f.train.cars;
   if (!save.train.engineLv) save.train.engineLv = 1;
-  // 主殖民地:沧澜开局即「殖民地」(LV3),约 1.5 万人,自带 居住/商贸/科研 三个初始区划
+  // 主殖民地:沧澜开局 1.5 万人,自带 居住/商贸/科研 三个初始区划 + 启动补给
   if (!save.est['kenxi/canglan']){
-    save.est['kenxi/canglan'] = Date.now() - LEVELS[4].th * 1000;   // 开局即「殖民地」1.5 万人
+    save.est['kenxi/canglan'] = Date.now();
+    save.pop['kenxi/canglan'] = 15000;
     if (!save.colony) save.colony = {};
     save.colony['kenxi/canglan'] = { districts: [
       { type:'habitation', startAt: Date.now() - 9e6, dur: 1, builds: [], ann: 1 },
       { type:'trade',      startAt: Date.now() - 9e6, dur: 1, builds: [], ann: 1 },
       { type:'research',   startAt: Date.now() - 9e6, dur: 1, builds: [], ann: 1 },
     ]};
+    save.pstore['kenxi/canglan'] = { chem: 800, he3: 200 };   // 首都启动补给:约 2 小时消费品
   }
   if (!save.story) save.story = { idx:0, nextAt: Date.now() + 8000, buffs:{cap:1, rate:1, civ:0}, log:[] };
   if (!save.story.buffs) save.story.buffs = {cap:1, rate:1, civ:0};
-}
-
-/* 旧版(单星系)存档迁移:est.canglan → est['kenxi/canglan'] */
-function migrateOld(old){
-  const s = freshSave();
-  if (old.est) for (const id in old.est) s.est['kenxi/' + id] = old.est[id];
-  if (old.story) s.story = old.story;
-  if (old.side) s.side = old.side;
-  if (old.bgm !== undefined) s.bgm = old.bgm;
-  return s;
 }
 
 async function loadSave(){
@@ -163,13 +153,6 @@ async function loadSave(){
   try{
     const raw = await Store.get(SAVE_KEY);
     if (raw){ save = JSON.parse(raw); }
-    else {
-      const oldRaw = await Store.get(OLD_KEY);
-      if (oldRaw){
-        save = migrateOld(JSON.parse(oldRaw));
-        save._migrated = true;
-      }
-    }
   }catch(e){ save = null; }
   normalizeSave();
   maybeUnlockSide();
@@ -208,12 +191,6 @@ function maybeUnlockSide(){
 function addInfluence(v){ save.influence = (save.influence || 0) + v; }
 
 function applyChoiceFx(fx){
-  if (fx.jump){                                  // 兼容旧奖励类型
-    for (const key in save.est){
-      if (fx.jump.scope === 'all' || fx.jump.scope === key)
-        save.est[key] -= fx.jump.sec * 1000;
-    }
-  }
   if (fx.cap) save.story.buffs.cap *= fx.cap;
   if (fx.rate) save.story.buffs.rate *= fx.rate;
   if (fx.civ) save.story.buffs.civ += fx.civ;

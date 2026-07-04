@@ -65,16 +65,10 @@ async function init(){
   setTimeout(() => $('tip').classList.add('hidden'), 12000);
 
   // 回访问候
-  if (save._migrated){
-    delete save._migrated;
-    persistSave();
-    setTimeout(() => showToast('检测到单星系时代的旧存档 —— <b>已迁移至银河纪元</b>,殖民进度完整保留', {sfx:'unlock', say:'Archive migrated. Welcome to the galactic era.'}), 1600);
-  } else {
-    const deved = allPlanets().filter(p => devLevel(p) > 0);
-    if (deved.length > 1){
-      const best = deved.reduce((a,b) => devLevel(a) >= devLevel(b) ? a : b);
-      setTimeout(() => showToast(`欢迎回来,指挥官 —— <b>${best.name}</b> 当前阶段:<b>${LEVELS[devLevel(best)].name}</b>`, {say:'Welcome back, Commander.'}), 1400);
-    }
+  const deved = allPlanets().filter(p => devLevel(p) > 0);
+  if (deved.length > 1){
+    const best = deved.reduce((a,b) => devLevel(a) >= devLevel(b) ? a : b);
+    setTimeout(() => showToast(`欢迎回来,指挥官 —— <b>${best.name}</b> 当前阶段:<b>${LEVELS[devLevel(best)].name}</b>`, {say:'Welcome back, Commander.'}), 1400);
   }
 }
 init();
