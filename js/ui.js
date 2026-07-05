@@ -54,15 +54,11 @@ function artBanner(src, cap, h){
 }
 
 /* ════════ 行星面板 ════════ */
-function openPanel(d){
-  panelPlanet = d; panelSys = null;
+function planetInfoHtml(d){
   const roleTag = d.role === 'hab'
     ? `<span class="role-tag hab">${DIST_ICONS.habitation} ${d.key==='kenxi/canglan' ? '主殖民地' : '居住型'} · 容量 ${(d.capScale*100).toFixed(0)}%</span>`
     : `<span class="role-tag res">${RES_ICONS[d.res.key]} 资源型 · ${RESOURCES[d.res.key].name} ×${d.res.rich.toFixed(1)}</span>`;
-  const alias = d.alias ? `<span style="font-size:.85rem;font-weight:600;color:var(--text-dim)">(${d.alias})</span>` : '';
-  $('panel-body').innerHTML = `
-    <h2><span style="color:${dotColor(d)}">${iconOf(d)}</span>${d.name}${alias}</h2>
-    <div class="type-tag">${d.type} · ${d.id.toUpperCase()}</div>
+  return `
     <div class="art-banner hero" style="background-image:url('${planetArtOf(d)}')"><span class="art-cap">${d.id.toUpperCase()} · ORBITAL SURVEY</span></div>
     <p class="desc">${roleTag}<p style="margin-top:.7rem">${d.desc}</p></p>
     <div class="divider"></div>
@@ -74,9 +70,16 @@ function openPanel(d){
       <div class="item"><div class="k">宜居度</div><div class="v">${(d.habit*100).toFixed(0)} %</div></div>
       ${moonsOf(d).length ? `<div class="item"><div class="k">卫星</div><div class="v">${moonsOf(d).length} 颗(${moonsOf(d).map(m => MOON_SIZES[m.size].name[0]).join('/')})</div></div>
       <div class="item"><div class="k">卫星港潜力</div><div class="v" style="color:var(--cyan)">+${moonsOf(d).reduce((s,m)=>s+m.slots,0)} 区划</div></div>` : ''}
-    </div>
-    <div class="divider"></div>
-    <div class="sec-label">星球开发</div>
+    </div>`;
+}
+let panelTab = '概览';
+function openPanel(d){
+  panelPlanet = d; panelSys = null;
+  panelTab = '概览';
+  const alias = d.alias ? `<span style="font-size:.85rem;font-weight:600;color:var(--text-dim)">(${d.alias})</span>` : '';
+  $('panel-body').innerHTML = `
+    <h2><span style="color:${dotColor(d)}">${iconOf(d)}</span>${d.name}${alias}</h2>
+    <div class="type-tag">${d.type} · ${d.id.toUpperCase()}</div>
     <div id="dev-block"></div>`;
   renderDevBlock();
   $('panel').classList.add('show');
@@ -116,7 +119,9 @@ function renderDevBlock(){
       <p class="hint">${roleHint}</p>
       <p class="hint">${!sysHasColony(d.sysId)
         ? '本星系尚无人定居:建立将整舱消耗一节休眠舱(内含 1000 名深眠拓荒者与种子库),不占用随车移民。'
-        : `建立殖民地将消耗随车移民 ${fmtNum(ESTABLISH_COLONISTS)} 人。`}开发等级来自你的经营:开辟区划、建造建筑、运入移民、运出产出。</p>`;
+        : `建立殖民地将消耗随车移民 ${fmtNum(ESTABLISH_COLONISTS)} 人。`}开发等级来自你的经营:开辟区划、建造建筑、运入移民、运出产出。</p>
+      <div class="divider"></div>
+      ${planetInfoHtml(d)}`;
     bindDockBtn(d);
     if (!locked){
       const eb = $('establish-btn');
@@ -193,20 +198,28 @@ function renderDevBlock(){
       </div>`;
   }
 
+  // ── 标签页:导航固定最顶端,每次只渲染当前页(告别长滚动) ──
   const migHtml = migBoxHtml(d);
   const portHtml = starportHtml(d);
-  const navBtns = [
-    ['sec-top', '概览'],
-    ['sec-eco', d.role === 'hab' ? '人口' : '产出'],
-    migHtml ? ['sec-mig', '迁移'] : null,
-    ['sec-store', '仓储'],
-    portHtml ? ['sec-port', '星港'] : null,
-    ['sec-dist', '区划'],
-  ].filter(Boolean).map(([id, name]) => `<button data-secnav="${id}">${name}</button>`).join('');
-  blk.innerHTML = `
-    ${dockControlHtml(d)}
-    <div class="panel-nav">${navBtns}</div>
-    <div id="sec-top">
+  const sh = shortOf(d);
+  const shortDot = (sh.chem || sh.ice || sh.he3) ? '<span class="tab-dot red"></span>' : '';
+  const cst = colonyState(d);
+  const idleDot = (!activeConstruction(cst) && cst.districts.length < unlockedSlots(d)) ? '<span class="tab-dot amber"></span>' : '';
+  const tabs = [
+    ['概览', ''],
+    migHtml ? ['迁移', ''] : null,
+    ['仓储', shortDot],
+    portHtml ? ['星港', ''] : null,
+    ['区划', idleDot],
+    ['资料', ''],
+  ].filter(Boolean);
+  if (!tabs.some(([t]) => t === panelTab)) panelTab = '概览';
+  const navHtml = `<div class="panel-nav">${tabs.map(([t, dot]) =>
+    `<button data-ptab="${t}" class="${panelTab === t ? 'on' : ''}">${t}${dot}</button>`).join('')}</div>`;
+
+  let body;
+  if (panelTab === '概览'){
+    body = `
       <div class="level-row">
         <div class="level-name">${lvName(d, lv)}</div>
         <div class="level-num">LV ${lv} / ${MAX_LEVEL}</div>
@@ -214,21 +227,29 @@ function renderDevBlock(){
       <div class="bar"><div class="fill ${isMax?'max':''}" style="width:${(isMax?1:prog)*100}%"></div></div>
       <div class="bar-meta"><span>${isMax ? 'MAX' : (prog*100).toFixed(1)+'%'}</span>${etaHtml}</div>
       ${nextHtml}
-    </div>
-    <div id="sec-eco">${ecoHtml}</div>
-    ${migHtml ? `<div id="sec-mig">${migHtml}</div>` : ''}
-    <div id="sec-store">${storeHtml(d)}</div>
-    ${portHtml ? `<div id="sec-port">${portHtml}</div>` : ''}
-    <div id="sec-dist">
-      <div class="divider"></div>
-      <div class="sec-label" style="--c:var(--purple)">殖民区划</div>
+      ${ecoHtml}`;
+  } else if (panelTab === '迁移'){
+    body = migHtml;
+  } else if (panelTab === '仓储'){
+    body = storeHtml(d);
+  } else if (panelTab === '星港'){
+    body = portHtml;
+  } else if (panelTab === '区划'){
+    body = `<div class="sec-label" style="--c:var(--purple)">殖民区划</div>
       ${districtsHtml(d)}
-    </div>
-    <p class="hint">开发等级越高,夜面城市灯光越密集——切换到星球背阳面即可观察。</p>`;
-  blk.querySelectorAll('[data-secnav]').forEach(b => b.onclick = (e) => {
+      <p class="hint">开发等级越高,夜面城市灯光越密集——切换到星球背阳面即可观察。</p>`;
+  } else {
+    body = planetInfoHtml(d);
+  }
+  blk.innerHTML = navHtml + dockControlHtml(d) + body;
+  blk.querySelectorAll('[data-ptab]').forEach(b => b.onclick = (e) => {
     e.stopPropagation();
-    const el = document.getElementById(b.dataset.secnav);
-    if (el) el.scrollIntoView({ block:'start' });
+    if (panelTab === b.dataset.ptab) return;
+    panelTab = b.dataset.ptab;
+    sfx('blip');
+    renderDevBlock();
+    const inner = document.querySelector('#panel .inner');
+    if (inner) inner.scrollTop = 0;
   });
   const cb = $('collect-btn');
   if (cb) cb.onclick = () => doCollect(d.sysId);
@@ -1014,9 +1035,9 @@ function questPendingList(){
 const OBJECTIVES = [
   { t:'接收深空讯号', d:'点左下角「深空讯号 · 接收」,读完第一章 —— 故事会告诉你这列火车为什么在这里',
     done: () => save.story && save.story.idx >= 1 },
-  { t:'规划第一座区划', d:'点击行星「沧澜」→ 面板「开辟区划」。四类区划四种产出:民生=人口承载 · 工业=产率 · 科研=科研值(供列车研发)· 商贸=影响力与仓储。人口是一切产出的乘数',
+  { t:'规划第一座区划', d:'点击行星「沧澜」→ 面板「区划」页 →「开辟区划」。四类区划四种产出:民生=人口承载 · 工业=产率 · 科研=科研值(供列车研发)· 商贸=影响力与仓储。人口是一切产出的乘数',
     done: () => { const st = save.colony && save.colony['kenxi/canglan']; return !!(st && st.districts.length >= 4); } },
-  { t:'装载 1000 名移民', d:'沧澜面板 · 迁移池 →「装载移民」。人口就是劳动力 —— 运到哪,哪里就成长',
+  { t:'装载 1000 名移民', d:'沧澜面板「迁移」页 →「装载移民」。人口就是劳动力 —— 运到哪,哪里就成长',
     done: () => save.train.pax >= ESTABLISH_COLONISTS || !!save.est['kenxi/jinyan'] },
   { t:'泊入烬岩,建立前哨', d:'底部行星列表点「烬岩」→「泊入轨道」→「建立前哨」。资源星负责挖,居住星负责长 —— 你的列车就是它们之间的血管',
     done: () => !!save.est['kenxi/jinyan'] },
@@ -1030,7 +1051,7 @@ const OBJECTIVES = [
     done: () => !!save.visited.zhulong },
   { t:'在烛龙播撒火种', d:'无人星系的第一块殖民地需要「休眠舱」—— 主线第 4 章会赠送一节。挂上它去烛龙的行星「播撒火种」。多殖民地 = 多条产线,银河才转得起来',
     done: () => Object.keys(save.est).some(k => !k.startsWith('kenxi/')) },
-  { t:'开通第一条贸易线', d:'殖民地到「采掘站/拓荒镇」级会自动开建星港;两端星港建成后,在行星面板 · 星港一节「开通贸易线」并点「开始运输」—— 货轮从此替你跑腿,列车去挣更远的钱',
+  { t:'开通第一条贸易线', d:'殖民地到「采掘站/拓荒镇」级会自动开建星港;两端星港建成后,在行星面板「星港」页开通贸易线并点「开始运输」—— 货轮从此替你跑腿,列车去挣更远的钱',
     done: () => (save.lines || []).some(l => l.on) },
 ];
 let _obSig = '';
@@ -1088,7 +1109,7 @@ function briefTick(){
   const cg = planetByKey('kenxi/canglan');
   // 0. 建设:开局即点拨 —— 玩家亲手规划
   H('build', () => cg && (save.treasury.metal || 0) >= 150,
-    '简报:殖民地由你亲手规划 —— 打开行星面板,在「开辟区划」里选类型开工;民生区涨承载,工业区提产率,科研区出科研值',
+    '简报:殖民地由你亲手规划 —— 行星面板「区划」页选类型开工;民生区涨承载,工业区提产率,科研区出科研值',
     'Colonial planning authorized.');
   // 1. 收取:首次本星系有待收取资源且列车停靠
   H('collect', () => save.train.status === 'docked' && planetsOf(save.train.sys).some(p => p.role === 'res' && resAvail(p) > 20),

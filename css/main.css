@@ -524,3 +524,7 @@ button.armed{color:#ffd9a0 !important;border-color:var(--amber) !important;backg
 .panel-nav{position:sticky;top:-1px;z-index:6;display:flex;gap:.3rem;flex-wrap:wrap;padding:.5rem 0 .45rem;margin:0 0 .3rem;background:linear-gradient(180deg,rgba(10,13,22,.96) 70%,rgba(10,13,22,0));backdrop-filter:blur(8px)}
 .panel-nav button{font-family:var(--mono);font-size:.62rem;letter-spacing:.08em;padding:.28rem .6rem;border-radius:99px;border:1px solid rgba(146,152,168,.28);background:rgba(255,255,255,.03);color:var(--text-dim);cursor:pointer;transition:all .15s}
 .panel-nav button:hover{color:var(--cyan);border-color:rgba(34,211,238,.5);background:rgba(34,211,238,.08)}
+.panel-nav button.on{color:var(--cyan);border-color:rgba(34,211,238,.6);background:rgba(34,211,238,.12)}
+.tab-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-left:.3rem;vertical-align:1px}
+.tab-dot.red{background:var(--red);box-shadow:0 0 6px var(--red);animation:obPulse 1.2s infinite}
+.tab-dot.amber{background:var(--amber);box-shadow:0 0 5px var(--amber)}
