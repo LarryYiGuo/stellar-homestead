@@ -505,20 +505,19 @@ canvas.dragging{cursor:grabbing}
 button.armed{color:#ffd9a0 !important;border-color:var(--amber) !important;background:rgba(245,158,11,.16) !important;animation:armPulse 1s ease-in-out infinite}
 @keyframes armPulse{0%,100%{box-shadow:0 0 4px rgba(245,158,11,.25)}50%{box-shadow:0 0 13px rgba(245,158,11,.6)}}
 
-/* ── 新手航路:目标链 HUD ── */
-#objectives{position:fixed;left:1rem;top:6.6rem;z-index:8;width:242px;padding:.6rem .75rem .55rem;border-radius:12px;background:linear-gradient(165deg,rgba(12,17,29,.82),rgba(8,11,19,.76));backdrop-filter:blur(10px);border:1px solid rgba(34,211,238,.28);font-size:.74rem;transition:opacity .3s;box-shadow:0 4px 16px rgba(0,0,0,.35)}
+/* ── 新手航路:单条模式 —— 半透明,只显示当前目标,完成淡出换下一条 ── */
+#objectives{position:fixed;left:1rem;top:6.6rem;z-index:8;width:238px;padding:.5rem .7rem .55rem;border-radius:12px;background:rgba(10,14,24,.45);backdrop-filter:blur(8px);border:1px solid rgba(34,211,238,.18);font-size:.74rem;transition:opacity .3s;box-shadow:0 3px 12px rgba(0,0,0,.25)}
 #objectives.hidden{opacity:0;pointer-events:none}
-#objectives .ob-head{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:.6rem;letter-spacing:.14em;color:var(--cyan);margin-bottom:.35rem}
+#objectives .ob-head{display:flex;justify-content:space-between;align-items:center;font-family:var(--mono);font-size:.58rem;letter-spacing:.14em;color:rgba(34,211,238,.75);margin-bottom:.15rem}
 #objectives .ob-head button{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:.75rem;padding:0 .2rem}
-#objectives .ob-step{display:flex;gap:.45rem;padding:.22rem 0;color:var(--text-muted);line-height:1.5;align-items:flex-start}
-#objectives .ob-step.done{opacity:.42}
-#objectives .ob-step.done .ob-t{text-decoration:line-through}
-#objectives .ob-step.cur{color:var(--text)}
-#objectives .ob-dot{flex:none;width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.14);margin-top:.32rem}
-#objectives .ob-step.done .ob-dot{background:var(--green)}
-#objectives .ob-step.cur .ob-dot{background:var(--cyan);box-shadow:0 0 8px var(--cyan);animation:obPulse 1.2s ease-in-out infinite}
-#objectives .ob-desc{display:block;font-size:.66rem;color:var(--text-dim);margin-top:.12rem}
+#objectives .ob-cur{animation:obIn .5s ease-out}
+@keyframes obIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+#objectives .ob-step{display:flex;gap:.45rem;padding:.18rem 0;color:var(--text);line-height:1.5;align-items:flex-start}
+#objectives .ob-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan);margin-top:.32rem;animation:obPulse 1.2s ease-in-out infinite}
+#objectives .ob-t{font-weight:600;animation:obBreathe 2.4s ease-in-out infinite}
+#objectives .ob-desc{font-size:.66rem;color:var(--text-dim);line-height:1.55;margin:.15rem 0 0 1.15rem}
 @keyframes obPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.4)}}
+@keyframes obBreathe{0%,100%{opacity:1;text-shadow:0 0 8px rgba(34,211,238,.35)}50%{opacity:.55;text-shadow:none}}
 
 /* ── 行星面板吸顶导航 ── */
 .panel-nav{position:sticky;top:-1px;z-index:6;display:flex;gap:.3rem;flex-wrap:wrap;padding:.5rem 0 .45rem;margin:0 0 .3rem;background:linear-gradient(180deg,rgba(10,13,22,.96) 70%,rgba(10,13,22,0));backdrop-filter:blur(8px)}

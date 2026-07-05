@@ -1092,13 +1092,12 @@ function objectivesTick(){
   box.classList.remove('hidden');
   const min = save.ui && save.ui.obMin;
   const cur = OBJECTIVES[save.tutStep];
-  const body = min
-    ? `<div class="ob-step cur"><span class="ob-dot"></span><span><span class="ob-t">${cur.t}</span></span></div>`
-    : OBJECTIVES.map((s, i) => {
-        const st = i < save.tutStep ? 'done' : i === save.tutStep ? 'cur' : '';
-        return `<div class="ob-step ${st}"><span class="ob-dot"></span><span><span class="ob-t">${s.t}</span>${i === save.tutStep ? `<span class="ob-desc">${s.d}</span>` : ''}</span></div>`;
-      }).join('');
-  const html = `<div class="ob-head"><span>新手航路 ${save.tutStep} / ${OBJECTIVES.length}</span><button id="ob-min" title="${min ? '展开' : '折叠'}">${min ? '▸' : '▾'}</button></div>${body}`;
+  // 单条模式:只显示当前目标,完成即淡出换下一条
+  const body = min ? '' : `<div class="ob-cur" key="${save.tutStep}">
+      <div class="ob-step cur"><span class="ob-dot"></span><span><span class="ob-t">${cur.t}</span></span></div>
+      <div class="ob-desc">${cur.d}</div>
+    </div>`;
+  const html = `<div class="ob-head"><span>新手航路 ${save.tutStep + 1} / ${OBJECTIVES.length}</span><button id="ob-min" title="${min ? '展开' : '收起'}">${min ? '▸' : '▾'}</button></div>${body}`;
   if (_obSig !== html){
     _obSig = html;
     box.innerHTML = html;
