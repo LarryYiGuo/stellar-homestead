@@ -306,8 +306,8 @@ function dockControlHtml(p){
     return questHintHtml(p) + `<div class="buff-line" style="margin-bottom:.6rem">🚆 轨道转移中 → ${to ? to.name : ''} · 剩余 ${Math.ceil(left)}s</div>`;
   }
   if (dockedAtPlanet(p))
-    return questHintHtml(p) + `<div class="buff-line" style="margin-bottom:.6rem;color:var(--green)">🚆 列车已停靠本星锚地${p.moonOf || planetsOf(p.sysId).some(x=>x.moonOf===p.id) ? '(卫星/母星泊位通用)' : ''}</div>`;
-  return questHintHtml(p) + `<button id="dock-btn" class="act-btn cyan" style="margin-bottom:.7rem;padding:.55rem">停 靠 本 星 · ${localTravelTime(p.id)}s</button>`;
+    return questHintHtml(p) + `<div class="dock-badge">🚆 列车已停靠本星锚地${p.moonOf || planetsOf(p.sysId).some(x=>x.moonOf===p.id) ? '(卫星/母星泊位通用)' : ''}</div>`;
+  return questHintHtml(p) + `<button id="dock-btn" class="act-btn dockable" style="margin-bottom:.7rem;padding:.55rem">🚆 停 靠 本 星 · ${localTravelTime(p.id)}s</button>`;
 }
 function bindDockBtn(p){
   const b = $('dock-btn');

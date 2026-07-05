@@ -528,3 +528,8 @@ button.armed{color:#ffd9a0 !important;border-color:var(--amber) !important;backg
 .tab-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-left:.3rem;vertical-align:1px}
 .tab-dot.red{background:var(--red);box-shadow:0 0 6px var(--red);animation:obPulse 1.2s infinite}
 .tab-dot.amber{background:var(--amber);box-shadow:0 0 5px var(--amber)}
+
+/* ── 停靠状态:已停靠=绿色填充徽章;可停靠=绿框无填充按钮 ── */
+.dock-badge{display:flex;align-items:center;justify-content:center;gap:.4rem;margin-bottom:.7rem;padding:.55rem .7rem;border-radius:10px;background:linear-gradient(180deg,rgba(62,207,142,.92),rgba(30,150,95,.92));color:#04170d;font-weight:700;font-size:.78rem;letter-spacing:.05em;box-shadow:0 2px 14px rgba(62,207,142,.35),inset 0 1px 0 rgba(255,255,255,.25)}
+.act-btn.dockable{border:1.5px solid var(--green);background:transparent;color:var(--green);box-shadow:none}
+.act-btn.dockable:hover{background:rgba(62,207,142,.12);box-shadow:0 0 12px rgba(62,207,142,.25)}
