@@ -193,23 +193,43 @@ function renderDevBlock(){
       </div>`;
   }
 
+  const migHtml = migBoxHtml(d);
+  const portHtml = starportHtml(d);
+  const navBtns = [
+    ['sec-top', '概览'],
+    ['sec-eco', d.role === 'hab' ? '人口' : '产出'],
+    migHtml ? ['sec-mig', '迁移'] : null,
+    ['sec-store', '仓储'],
+    portHtml ? ['sec-port', '星港'] : null,
+    ['sec-dist', '区划'],
+  ].filter(Boolean).map(([id, name]) => `<button data-secnav="${id}">${name}</button>`).join('');
   blk.innerHTML = `
     ${dockControlHtml(d)}
-    <div class="level-row">
-      <div class="level-name">${lvName(d, lv)}</div>
-      <div class="level-num">LV ${lv} / ${MAX_LEVEL}</div>
+    <div class="panel-nav">${navBtns}</div>
+    <div id="sec-top">
+      <div class="level-row">
+        <div class="level-name">${lvName(d, lv)}</div>
+        <div class="level-num">LV ${lv} / ${MAX_LEVEL}</div>
+      </div>
+      <div class="bar"><div class="fill ${isMax?'max':''}" style="width:${(isMax?1:prog)*100}%"></div></div>
+      <div class="bar-meta"><span>${isMax ? 'MAX' : (prog*100).toFixed(1)+'%'}</span>${etaHtml}</div>
+      ${nextHtml}
     </div>
-    <div class="bar"><div class="fill ${isMax?'max':''}" style="width:${(isMax?1:prog)*100}%"></div></div>
-    <div class="bar-meta"><span>${isMax ? 'MAX' : (prog*100).toFixed(1)+'%'}</span>${etaHtml}</div>
-    ${nextHtml}
-    ${ecoHtml}
-    ${migBoxHtml(d)}
-    ${storeHtml(d)}
-    ${starportHtml(d)}
-    <div class="divider"></div>
-    <div class="sec-label" style="--c:var(--purple)">殖民区划</div>
-    ${districtsHtml(d)}
+    <div id="sec-eco">${ecoHtml}</div>
+    ${migHtml ? `<div id="sec-mig">${migHtml}</div>` : ''}
+    <div id="sec-store">${storeHtml(d)}</div>
+    ${portHtml ? `<div id="sec-port">${portHtml}</div>` : ''}
+    <div id="sec-dist">
+      <div class="divider"></div>
+      <div class="sec-label" style="--c:var(--purple)">殖民区划</div>
+      ${districtsHtml(d)}
+    </div>
     <p class="hint">开发等级越高,夜面城市灯光越密集——切换到星球背阳面即可观察。</p>`;
+  blk.querySelectorAll('[data-secnav]').forEach(b => b.onclick = (e) => {
+    e.stopPropagation();
+    const el = document.getElementById(b.dataset.secnav);
+    if (el) el.scrollIntoView({ block:'start' });
+  });
   const cb = $('collect-btn');
   if (cb) cb.onclick = () => doCollect(d.sysId);
   bindDockBtn(d);
@@ -994,20 +1014,24 @@ function questPendingList(){
 const OBJECTIVES = [
   { t:'接收深空讯号', d:'点左下角「深空讯号 · 接收」,读完第一章 —— 故事会告诉你这列火车为什么在这里',
     done: () => save.story && save.story.idx >= 1 },
-  { t:'规划第一座区划', d:'点击行星「沧澜」→ 面板拉到「开辟区划」选一种开工(金库已备好启动金;民生涨人口,工业提产率)',
+  { t:'规划第一座区划', d:'点击行星「沧澜」→ 面板「开辟区划」。四类区划四种产出:民生=人口承载 · 工业=产率 · 科研=科研值(供列车研发)· 商贸=影响力与仓储。人口是一切产出的乘数',
     done: () => { const st = save.colony && save.colony['kenxi/canglan']; return !!(st && st.districts.length >= 4); } },
-  { t:'装载 1000 名移民', d:'沧澜面板 · 迁移池 →「装载移民」,拓荒者会跟车出发',
+  { t:'装载 1000 名移民', d:'沧澜面板 · 迁移池 →「装载移民」。人口就是劳动力 —— 运到哪,哪里就成长',
     done: () => save.train.pax >= ESTABLISH_COLONISTS || !!save.est['kenxi/jinyan'] },
-  { t:'泊入烬岩,建立前哨', d:'底部行星列表点「烬岩」→「泊入轨道」→「建立前哨」—— 全系品位最高的金属矿',
+  { t:'泊入烬岩,建立前哨', d:'底部行星列表点「烬岩」→「泊入轨道」→「建立前哨」。资源星负责挖,居住星负责长 —— 你的列车就是它们之间的血管',
     done: () => !!save.est['kenxi/jinyan'] },
-  { t:'收取矿石入货舱', d:'烬岩投产后(约一两分钟),在其面板点「装载本星系资源」',
+  { t:'收取矿石入货舱', d:'烬岩投产后(一两分钟),在其面板点「装载本星系资源」。矿石=金库的钱:区划、车厢、引擎全靠它;出口量还会直接推动矿星升级',
     done: () => ((save.exported || {})['kenxi/jinyan'] || 0) > 0 },
   { t:'返航沧澜,货舱入库', d:'泊回沧澜(母港)→ 列车面板(快捷键 T)→「货舱入库金库」—— 入了库的才是能花的钱',
     done: () => !!(save.flags && save.flags.banked) },
-  { t:'升级引擎至 LV2', d:'列车面板 → 点选动力车头 →「升级」(点两次确认)—— 更快,也是远航的门票',
+  { t:'升级引擎至 LV2', d:'列车面板 → 点选动力车头 →「升级」(500 金属,点两次确认)。不够就再去烬岩拉一趟 —— 引擎等级解锁更远的星系',
     done: () => save.train.engineLv >= 2 || !!(save.upgrade && save.upgrade.kind === 'engine') },
   { t:'远航烛龙星系', d:'右上银河总图(快捷键 G)→ 点「烛龙」→「启程」—— 最近的金属富矿星系;小心,域外有袭击者',
     done: () => !!save.visited.zhulong },
+  { t:'在烛龙播撒火种', d:'无人星系的第一块殖民地需要「休眠舱」—— 主线第 4 章会赠送一节。挂上它去烛龙的行星「播撒火种」。多殖民地 = 多条产线,银河才转得起来',
+    done: () => Object.keys(save.est).some(k => !k.startsWith('kenxi/')) },
+  { t:'开通第一条贸易线', d:'殖民地到「采掘站/拓荒镇」级会自动开建星港;两端星港建成后,在行星面板 · 星港一节「开通贸易线」并点「开始运输」—— 货轮从此替你跑腿,列车去挣更远的钱',
+    done: () => (save.lines || []).some(l => l.on) },
 ];
 let _obSig = '';
 function objectivesTick(){
@@ -1074,6 +1098,10 @@ function briefTick(){
   H('migrate', () => cg && save.train.status === 'docked' && save.train.sys === 'kenxi' && migInfo(cg).pool >= 500,
     '简报:沧澜迁移池已有志愿者 —— 「装载移民」上车,飞抵新行星后「落户」即可建立前哨,这是殖民循环的核心',
     'Colonists awaiting boarding.');
+  // 2.5 影响力:首次攒到 10 点
+  H('influence', () => (save.influence || 0) >= 10,
+    '简报:顶栏紫色数字是「影响力」—— 政治动员力。用途:远程加速任何建设/科技/升级工期、征集移民、注资星港;来自民生/商贸区划、物流运转与战斗胜利',
+    'Influence accumulating.');
   // 3. 补给线:首次出现消耗覆盖不足 30 分钟
   H('supply', () => allPlanets().some(p => {
     if (!save.est[p.key]) return false;

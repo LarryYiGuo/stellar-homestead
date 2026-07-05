@@ -392,7 +392,7 @@ function autoEconomyTick(){
   _autoEcoAt = now;
   for (const key in save.est){
     const p = planetByKey(key);
-    if (!p || p.moonOf || devLevel(p) < 4 || portState(key)) continue;   // 「殖民地」级自动建星港;卫星不入贸易网,不自动建
+    if (!p || p.moonOf || devLevel(p) < 3 || portState(key)) continue;   // LV3 起自动建星港;卫星不入贸易网,不自动建
     if (!save.starport) save.starport = {};
     save.starport[key] = { startAt: now, dur: STARPORT_TIME * 2, auto: 1 };
     pushLog(`${p.name} 殖民地自筹开建星港(本地产能,工期 ${fmtDuration(STARPORT_TIME * 2)};注资可加速)`);
