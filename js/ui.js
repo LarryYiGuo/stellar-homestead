@@ -207,11 +207,10 @@ function renderDevBlock(){
   const idleDot = (!activeConstruction(cst) && cst.districts.length < unlockedSlots(d)) ? '<span class="tab-dot amber"></span>' : '';
   const tabs = [
     ['概览', ''],
-    migHtml ? ['迁移', ''] : null,
-    ['仓储', shortDot],
-    portHtml ? ['星港', ''] : null,
     ['区划', idleDot],
-    ['资料', ''],
+    ['仓储', shortDot],
+    migHtml ? ['迁移', ''] : null,
+    portHtml ? ['星港', ''] : null,
   ].filter(Boolean);
   if (!tabs.some(([t]) => t === panelTab)) panelTab = '概览';
   const navHtml = `<div class="panel-nav">${tabs.map(([t, dot]) =>
@@ -227,19 +226,19 @@ function renderDevBlock(){
       <div class="bar"><div class="fill ${isMax?'max':''}" style="width:${(isMax?1:prog)*100}%"></div></div>
       <div class="bar-meta"><span>${isMax ? 'MAX' : (prog*100).toFixed(1)+'%'}</span>${etaHtml}</div>
       ${nextHtml}
-      ${ecoHtml}`;
+      ${ecoHtml}
+      <div class="divider"></div>
+      ${planetInfoHtml(d)}`;
   } else if (panelTab === '迁移'){
     body = migHtml;
   } else if (panelTab === '仓储'){
     body = storeHtml(d);
   } else if (panelTab === '星港'){
     body = portHtml;
-  } else if (panelTab === '区划'){
+  } else {
     body = `<div class="sec-label" style="--c:var(--purple)">殖民区划</div>
       ${districtsHtml(d)}
       <p class="hint">开发等级越高,夜面城市灯光越密集——切换到星球背阳面即可观察。</p>`;
-  } else {
-    body = planetInfoHtml(d);
   }
   blk.innerHTML = navHtml + dockControlHtml(d) + body;
   blk.querySelectorAll('[data-ptab]').forEach(b => b.onclick = (e) => {
@@ -251,6 +250,17 @@ function renderDevBlock(){
     const inner = document.querySelector('#panel .inner');
     if (inner) inner.scrollTop = 0;
   });
+  // 停靠徽章 = 快捷跳转:点一下 → 迁移(装/卸人),再点 → 仓储(补给/收支)
+  const badge = blk.querySelector('.dock-badge');
+  if (badge) badge.onclick = (e) => {
+    e.stopPropagation();
+    const hasMig = tabs.some(([t]) => t === '迁移');
+    panelTab = (hasMig && panelTab !== '迁移') ? '迁移' : '仓储';
+    sfx('blip');
+    renderDevBlock();
+    const inner = document.querySelector('#panel .inner');
+    if (inner) inner.scrollTop = 0;
+  };
   const cb = $('collect-btn');
   if (cb) cb.onclick = () => doCollect(d.sysId);
   bindDockBtn(d);
