@@ -59,7 +59,6 @@ function planetInfoHtml(d){
     ? `<span class="role-tag hab">${DIST_ICONS.habitation} ${d.key==='kenxi/canglan' ? '主殖民地' : '居住型'} · 容量 ${(d.capScale*100).toFixed(0)}%</span>`
     : `<span class="role-tag res">${RES_ICONS[d.res.key]} 资源型 · ${RESOURCES[d.res.key].name} ×${d.res.rich.toFixed(1)}</span>`;
   return `
-    <div class="art-banner hero" style="background-image:url('${planetArtOf(d)}')"><span class="art-cap">${d.id.toUpperCase()} · ORBITAL SURVEY</span></div>
     <p class="desc">${roleTag}<p style="margin-top:.7rem">${d.desc}</p></p>
     <div class="divider"></div>
     <div class="sec-label">行星参数</div>
@@ -80,6 +79,7 @@ function openPanel(d){
   $('panel-body').innerHTML = `
     <h2><span style="color:${dotColor(d)}">${iconOf(d)}</span>${d.name}${alias}</h2>
     <div class="type-tag">${d.type} · ${d.id.toUpperCase()}</div>
+    <div class="art-banner hero" style="background-image:url('${planetArtOf(d)}')"><span class="art-cap">${d.id.toUpperCase()} · ORBITAL SURVEY</span></div>
     <div id="dev-block"></div>`;
   renderDevBlock();
   $('panel').classList.add('show');
